@@ -118,3 +118,20 @@ curl -X POST http://localhost:3000/api/events/track/batch \
 ## License
 
 MIT
+
+
+
+```js
+(function() {
+  const script = document.createElement('script');
+  script.src = 'http://localhost:3000/monitor.js';
+  script.onload = function() {
+    console.log('✅ Live Network Monitor loaded successfully!');
+    console.log('Monitor UI should appear in bottom-right corner');
+  };
+  script.onerror = function() {
+    console.error('❌ Failed to load monitor script');
+  };
+  document.head.appendChild(script);
+})();
+```
