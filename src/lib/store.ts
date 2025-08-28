@@ -217,20 +217,42 @@ export function getStatistics(
   const filtered = filterRange(from, to).filter((e) => !userId || e.userId === userId);
   const totalEventCount = filtered.length;
   const perDayMap = new Map<string, number>();
+  const byService = new Map<string, StoredEvent[]>();
   for (const e of filtered) {
     const d = new Date(e.timestamp);
     const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
     perDayMap.set(key, (perDayMap.get(key) ?? 0) + 1);
+  const svc = String(e.payload.serviceName ?? 'unknown');
+  if (!byService.has(svc)) byService.set(svc, []);
+  byService.get(svc)!.push(e);
   }
   const perDay = [...perDayMap.entries()]
     .map(([date, count]) => ({ date, count }))
     .sort((a, b) => (a.date < b.date ? -1 : 1));
   const counts = aggregateCounts(filtered);
+  const serviceBreakdown = [...byService.entries()].map(([serviceName, eventsForSvc]) => {
+    const svcCounts = aggregateCounts(eventsForSvc);
+    const lastSeenTs = Math.max(...eventsForSvc.map((e) => e.timestamp));
+    const errors = eventsForSvc.filter((e) => typeof e.payload?.statusCode === 'number' && (e.payload.statusCode as number) >= 400).length;
+    const avgLatencyArr = eventsForSvc.map((e) => e.payload?.responseTimeMs).filter((v): v is number => typeof v === 'number');
+    const avgResponseTime = avgLatencyArr.length ? Math.round(avgLatencyArr.reduce((a, b) => a + b, 0) / avgLatencyArr.length) : undefined;
+    return {
+      serviceName,
+  eventCount: eventsForSvc.length,
+      uniqueEvents: svcCounts.length,
+      avgResponseTime,
+  errorRate: eventsForSvc.length ? Math.round((errors / eventsForSvc.length) * 100) : 0,
+      lastSeen: new Date(lastSeenTs || Date.now()).toISOString(),
+      topEvents: svcCounts.sort((a, b) => b.count - a.count).slice(0, 5),
+    };
+  });
   return {
     totalEventCount,
     totalUniqueEvents: counts.length,
+    totalServices: serviceBreakdown.length,
     perDay,
     topEvents: counts.sort((a, b) => b.count - a.count).slice(0, 10),
+    serviceBreakdown,
   };
 }
 
@@ -278,6 +300,20 @@ export function getEventsRange(
   return result;
 }
 
+export function getDebugInfo() {
+  return {
+    totalEvents: events.length,
+    lastFewEvents: events.slice(-10).map(e => ({
+      id: e.id,
+      name: e.name,
+      timestamp: new Date(e.timestamp).toISOString(),
+      userId: e.userId
+    })),
+    sseClients: sseClients.size,
+    wsClients: wsClients.size
+  };
+}
+
 export function cleanupOldData(retentionDays: number) {
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
   const before = events.length;
@@ -286,6 +322,16 @@ export function cleanupOldData(retentionDays: number) {
   }
   const removed = before - events.length;
   broadcast({ type: "stats", data: { removed } });
+  return removed;
+}
+
+// Danger: clears ALL events from memory (demo use)
+export function clearAllEvents() {
+  const removed = events.length;
+  events.length = 0;
+  try {
+    broadcast({ type: "stats", data: { cleared: removed, t: Date.now() } });
+  } catch {}
   return removed;
 }
 

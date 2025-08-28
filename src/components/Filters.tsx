@@ -1,6 +1,13 @@
 "use client";
 import { Fragment, memo, useEffect, useState } from "react";
 import { Listbox, Transition } from "@headlessui/react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { 
+  faClock, 
+  faChevronDown, 
+  faCircle,
+  faCalendarAlt 
+} from "@fortawesome/free-solid-svg-icons";
 
 interface Option { value: string; label: string }
 interface FiltersProps {
@@ -48,17 +55,22 @@ const Filters = memo(function Filters({ range, onRangeChange }: FiltersProps) {
       <Listbox value={selected} onChange={(opt) => onRangeChange(opt.value)}>
         <div className="relative min-w-40">
           <Listbox.Button className="w-full rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-left flex items-center gap-2">
-            {isLiveRange && (
-              <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" title="Live time window" />
+            {isLiveRange ? (
+              <FontAwesomeIcon icon={faCircle} className="text-emerald-400 text-xs animate-pulse" title="Live time window" />
+            ) : (
+              <FontAwesomeIcon icon={faCalendarAlt} className="text-blue-400 text-xs" title="Historical time window" />
             )}
             {selected.label}
+            <FontAwesomeIcon icon={faChevronDown} className="text-xs text-gray-400 ml-auto" />
           </Listbox.Button>
           <Transition as={Fragment} leave="transition ease-in duration-100" leaveFrom="opacity-100" leaveTo="opacity-0">
             <Listbox.Options className="absolute z-20 mt-1 w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow focus:outline-none">
               {ranges.map((opt) => (
                 <Listbox.Option key={opt.value} value={opt} className={({ active }) => `cursor-pointer px-3 py-2 text-sm flex items-center gap-2 ${active ? "bg-neutral-100 dark:bg-neutral-800" : ""}`}>
-                  {['5m', '20m', '1h'].includes(opt.value) && (
-                    <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                  {['5m', '20m', '1h'].includes(opt.value) ? (
+                    <FontAwesomeIcon icon={faCircle} className="text-emerald-400 text-xs animate-pulse" />
+                  ) : (
+                    <FontAwesomeIcon icon={faCalendarAlt} className="text-blue-400 text-xs" />
                   )}
                   {opt.label}
                 </Listbox.Option>
@@ -71,7 +83,7 @@ const Filters = memo(function Filters({ range, onRangeChange }: FiltersProps) {
       {/* Live time indicator */}
       {isLiveRange && isClient && (
         <div className="text-xs text-neutral-400 font-mono flex items-center gap-1">
-          <span className="w-1 h-1 bg-emerald-400 rounded-full animate-pulse" />
+          <FontAwesomeIcon icon={faClock} className="text-emerald-400 animate-pulse" />
           T-{formatTime(currentTime)}
         </div>
       )}

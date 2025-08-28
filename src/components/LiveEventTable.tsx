@@ -1,10 +1,13 @@
 import React, { useState } from "react";
 import type { AIEventPayload } from "@/lib/types";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faServer, faArrowRight, faUser, faBox, faCompass } from "@fortawesome/free-solid-svg-icons";
 
 import type { LiveEvt } from "../app/page";
 
 interface LiveEventTableProps {
   events: LiveEvt[];
+  viewingMode?: 'all' | 'requests' | 'responses' | 'events' | 'analytics';
 }
 
 function getStatusColor(status?: number) {
@@ -21,13 +24,39 @@ interface EventData {
   statusCode?: number;
   responseTimeMs?: number;
   userId?: string;
+  sessionId?: string | null;
+  serviceName?: string;
+  userAgent?: string;
+  method?: string;
+  path?: string;
+  contentLength?: number | null;
   timestamp: number;
   isRequest: boolean;
   original: LiveEvt;
 }
 
-export default function LiveEventTable({ events }: LiveEventTableProps) {
+export default function LiveEventTable({ events, viewingMode = 'all' }: LiveEventTableProps) {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const iconClass = "text-neutral-500";
+
+  const fmtBytes = (v?: number | null) => {
+    if (v == null || isNaN(v)) return "—";
+    if (v < 1024) return `${v} B`;
+    if (v < 1024 * 1024) return `${(v / 1024).toFixed(1)} KB`;
+    return `${(v / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const userColorClass = (id?: string) => {
+    if (!id) return "bg-neutral-600";
+    let hash = 0;
+    for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+    const palette = [
+      "bg-rose-600", "bg-fuchsia-600", "bg-purple-600", "bg-indigo-600",
+      "bg-blue-600", "bg-cyan-600", "bg-teal-600", "bg-emerald-600",
+      "bg-lime-600", "bg-amber-600", "bg-orange-600", "bg-red-600",
+    ];
+    return palette[hash % palette.length];
+  };
   
   if (events.length === 0) {
     return (
@@ -45,13 +74,36 @@ export default function LiveEventTable({ events }: LiveEventTableProps) {
   const parsedEvents: EventData[] = events.map(e => {
     const d = e.data;
     const payload: Partial<AIEventPayload> | undefined = d?.data && typeof d.data === "object" && "payload" in d.data ? (d.data.payload as Partial<AIEventPayload>) : undefined;
+    const rawMeta = payload?.metadata;
+    const metaObj = (rawMeta && typeof rawMeta === 'object') ? (rawMeta as Record<string, unknown>) : undefined;
+    const method = typeof metaObj?.["method"] === "string" ? (metaObj?.["method"] as string) : undefined;
+    const path = typeof metaObj?.["path"] === "string" ? (metaObj?.["path"] as string) : (typeof metaObj?.["url"] === "string" ? (metaObj?.["url"] as string) : undefined);
+    const contentLength = typeof metaObj?.["contentLength"] === "number" ? (metaObj?.["contentLength"] as number) : null;
+
+    const pRec = (payload && typeof payload === 'object') ? (payload as Record<string, unknown>) : undefined;
+    const userIdFromPayload = typeof pRec?.["userId"] === "string" ? (pRec?.["userId"] as string) : undefined;
+    const sessionFromPayload = typeof pRec?.["sessionId"] === "string" ? (pRec?.["sessionId"] as string) : undefined;
+    const serviceFromPayload = typeof pRec?.["serviceName"] === "string" ? (pRec?.["serviceName"] as string) : undefined;
+    const uaFromPayload = typeof pRec?.["userAgent"] === "string" ? (pRec?.["userAgent"] as string) : undefined;
+
+    const dataObj = (d?.data && typeof d.data === 'object') ? (d.data as Record<string, unknown>) : undefined;
+    const userIdTop = typeof dataObj?.["userId"] === "string" ? (dataObj?.["userId"] as string) : undefined;
     
+    // Prefer path as the display name for request/response; fallback to event name/type
+    const rawName = d?.data && typeof d.data === "object" && "name" in d.data ? String(d.data.name) : d?.type ?? "event";
+    const displayName = path ? `${method ? method.toUpperCase() + " " : ""}${path}` : rawName;
     return {
-      name: d?.data && typeof d.data === "object" && "name" in d.data ? String(d.data.name) : d?.type ?? "event",
+      name: displayName,
       correlationId: payload?.correlationId,
       statusCode: payload?.statusCode,
       responseTimeMs: payload?.responseTimeMs,
-      userId: d?.data && typeof d.data === "object" && "userId" in d.data ? String(d.data.userId) : undefined,
+      userId: userIdFromPayload ?? userIdTop ?? undefined,
+      sessionId: sessionFromPayload ?? null,
+      serviceName: serviceFromPayload,
+      userAgent: uaFromPayload,
+      method,
+      path,
+      contentLength,
       timestamp: e.t ?? Date.now(),
       isRequest: payload?.statusCode === 0,
       original: e
@@ -95,15 +147,20 @@ export default function LiveEventTable({ events }: LiveEventTableProps) {
 
   return (
     <div className="h-full overflow-auto">
-      <table className="w-full text-xs">
+  <table className="w-full text-xs">
         <thead className="bg-neutral-800 text-neutral-300 sticky top-0 z-10">
           <tr>
             <th className="text-left p-2 font-semibold">Time</th>
             <th className="text-left p-2 font-semibold">Event</th>
             <th className="text-left p-2 font-semibold min-w-[120px]">Correlation</th>
-            <th className="text-left p-2 font-semibold">Status</th>
-            <th className="text-left p-2 font-semibold">Latency</th>
-            <th className="text-left p-2 font-semibold">Data</th>
+            {(viewingMode === 'all' || viewingMode === 'responses') && (
+              <th className="text-left p-2 font-semibold">Status</th>
+            )}
+            {(viewingMode === 'all' || viewingMode === 'responses') && (
+              <th className="text-left p-2 font-semibold">Latency</th>
+            )}
+    <th className="text-left p-2 font-semibold">Info</th>
+    <th className="text-left p-2 font-semibold">Data</th>
           </tr>
         </thead>
         <tbody>
@@ -140,20 +197,64 @@ export default function LiveEventTable({ events }: LiveEventTableProps) {
                       <span className="text-neutral-600 text-xs">({events.length})</span>
                     </div>
                   </td>
-                  <td className="p-2">
-                    {typeof status === "number" ? (
-                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded font-bold ${getStatusColor(status)}`}>
-                        {status === 0 ? "📤" : status >= 400 ? "❌" : "✅"}
-                        {status}
-                      </span>
-                    ) : "—"}
-                  </td>
-                  <td className="p-2 font-mono">
-                    {typeof latency === "number" ? (
-                      <span className={latency > 1000 ? "text-rose-300" : latency > 500 ? "text-amber-300" : "text-emerald-300"}>
-                        {latency} ms
-                      </span>
-                    ) : "—"}
+                  {(viewingMode === 'all' || viewingMode === 'responses') && (
+                    <td className="p-2">
+                      {typeof status === "number" ? (
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded font-bold ${getStatusColor(status)}`}>
+                          {status === 0 ? "📤" : status >= 400 ? "❌" : "✅"}
+                          {status}
+                        </span>
+                      ) : "—"}
+                    </td>
+                  )}
+                  {(viewingMode === 'all' || viewingMode === 'responses') && (
+                    <td className="p-2 font-mono">
+                      {typeof latency === "number" ? (
+                        <span className={latency > 1000 ? "text-rose-300" : latency > 500 ? "text-amber-300" : "text-emerald-300"}>
+                          {latency} ms
+                        </span>
+                      ) : "—"}
+                    </td>
+                  )}
+                  <td className="p-2 text-neutral-300">
+                    <div className="flex flex-wrap gap-2 items-center">
+                      {events[0].serviceName && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-neutral-700">
+                          <FontAwesomeIcon icon={faServer} className={iconClass} />
+                          {events[0].serviceName}
+                        </span>
+                      )}
+                      {(requestEvent?.method || requestEvent?.path || responseEvent?.method || responseEvent?.path) && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-neutral-700">
+                          <FontAwesomeIcon icon={faArrowRight} className={iconClass} />
+                          <span className="font-mono">{requestEvent?.method || responseEvent?.method || "—"}</span>
+                          <span className="text-neutral-500">{(requestEvent?.path || responseEvent?.path || "").slice(0, 32)}</span>
+                        </span>
+                      )}
+                      {events[0].userId && (
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-white ${userColorClass(events[0].userId)}`}
+                          title={`userId: ${events[0].userId}${events[0].sessionId ? `, session: ${events[0].sessionId}` : ''}`}
+                        >
+                          <FontAwesomeIcon icon={faUser} className="opacity-90" />
+                          {events[0].userId}
+                        </span>
+                      )}
+                      {(requestEvent?.userAgent || responseEvent?.userAgent) && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-neutral-700" title={requestEvent?.userAgent || responseEvent?.userAgent}>
+                          <FontAwesomeIcon icon={faCompass} className={iconClass} />
+                          <span className="truncate max-w-[140px]">
+                            {(requestEvent?.userAgent || responseEvent?.userAgent || '').split(' ').slice(-1)[0]}
+                          </span>
+                        </span>
+                      )}
+                      {(requestEvent?.contentLength != null || responseEvent?.contentLength != null) && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-neutral-700">
+                          <FontAwesomeIcon icon={faBox} className={iconClass} />
+                          {fmtBytes(requestEvent?.contentLength ?? responseEvent?.contentLength ?? null)}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="p-2 text-neutral-500">
                     <span className="text-xs">
@@ -181,16 +282,20 @@ export default function LiveEventTable({ events }: LiveEventTableProps) {
                       </div>
                     </td>
                     <td className="p-2 font-mono text-xs text-neutral-600">↳</td>
-                    <td className="p-2">
-                      {typeof evt.statusCode === "number" ? (
-                        <span className={`inline-flex items-center gap-1 px-1 py-0.5 rounded text-xs font-bold ${getStatusColor(evt.statusCode)}`}>
-                          {evt.statusCode}
-                        </span>
-                      ) : "—"}
-                    </td>
-                    <td className="p-2 font-mono text-xs">
-                      {typeof evt.responseTimeMs === "number" ? `${evt.responseTimeMs} ms` : "—"}
-                    </td>
+                    {(viewingMode === 'all' || viewingMode === 'responses') && (
+                      <td className="p-2">
+                        {typeof evt.statusCode === "number" ? (
+                          <span className={`inline-flex items-center gap-1 px-1 py-0.5 rounded text-xs font-bold ${getStatusColor(evt.statusCode)}`}>
+                            {evt.statusCode}
+                          </span>
+                        ) : "—"}
+                      </td>
+                    )}
+                    {(viewingMode === 'all' || viewingMode === 'responses') && (
+                      <td className="p-2 font-mono text-xs">
+                        {typeof evt.responseTimeMs === "number" ? `${evt.responseTimeMs} ms` : "—"}
+                      </td>
+                    )}
                     <td className="p-2">
                       <details className="cursor-pointer">
                         <summary className="text-xs text-neutral-500 truncate max-w-xs">
@@ -200,6 +305,25 @@ export default function LiveEventTable({ events }: LiveEventTableProps) {
                           {JSON.stringify(evt.original.data, null, 2)}
                         </pre>
                       </details>
+                    </td>
+                    <td className="p-2 text-neutral-300">
+                      <div className="flex flex-wrap gap-2 items-center">
+                        {evt.serviceName && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-neutral-700"><FontAwesomeIcon icon={faServer} className={iconClass} />{evt.serviceName}</span>
+                        )}
+                        {(evt.method || evt.path) && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-neutral-700"><FontAwesomeIcon icon={faArrowRight} className={iconClass} /><span className="font-mono">{evt.method}</span><span className="text-neutral-500">{(evt.path || '').slice(0, 40)}</span></span>
+                        )}
+                        {evt.userId && (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-white ${userColorClass(evt.userId)}`}><FontAwesomeIcon icon={faUser} className="opacity-90" />{evt.userId}</span>
+                        )}
+                        {evt.userAgent && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-neutral-700" title={evt.userAgent}><FontAwesomeIcon icon={faCompass} className={iconClass} /><span className="truncate max-w-[160px]">{evt.userAgent.split(' ').slice(-1)[0]}</span></span>
+                        )}
+                        {evt.contentLength != null && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-neutral-700"><FontAwesomeIcon icon={faBox} className={iconClass} />{fmtBytes(evt.contentLength)}</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -218,21 +342,25 @@ export default function LiveEventTable({ events }: LiveEventTableProps) {
                 {evt.userId && <div className="text-xs text-neutral-500">{evt.userId}</div>}
               </td>
               <td className="p-2 font-mono text-xs text-neutral-600">—</td>
-              <td className="p-2">
-                {typeof evt.statusCode === "number" ? (
-                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded font-bold ${getStatusColor(evt.statusCode)}`}>
-                    {evt.statusCode === 0 ? "📤" : evt.statusCode >= 400 ? "❌" : "✅"}
-                    {evt.statusCode}
-                  </span>
-                ) : "—"}
-              </td>
-              <td className="p-2 font-mono">
-                {typeof evt.responseTimeMs === "number" ? (
-                  <span className={evt.responseTimeMs > 1000 ? "text-rose-300" : evt.responseTimeMs > 500 ? "text-amber-300" : "text-emerald-300"}>
-                    {evt.responseTimeMs} ms
-                  </span>
-                ) : "—"}
-              </td>
+              {(viewingMode === 'all' || viewingMode === 'responses') && (
+                <td className="p-2">
+                  {typeof evt.statusCode === "number" ? (
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded font-bold ${getStatusColor(evt.statusCode)}`}>
+                      {evt.statusCode === 0 ? "📤" : evt.statusCode >= 400 ? "❌" : "✅"}
+                      {evt.statusCode}
+                    </span>
+                  ) : "—"}
+                </td>
+              )}
+              {(viewingMode === 'all' || viewingMode === 'responses') && (
+                <td className="p-2 font-mono">
+                  {typeof evt.responseTimeMs === "number" ? (
+                    <span className={evt.responseTimeMs > 1000 ? "text-rose-300" : evt.responseTimeMs > 500 ? "text-amber-300" : "text-emerald-300"}>
+                      {evt.responseTimeMs} ms
+                    </span>
+                  ) : "—"}
+                </td>
+              )}
               <td className="p-2">
                 <details className="cursor-pointer">
                   <summary className="text-xs text-neutral-500 truncate max-w-xs">
@@ -242,6 +370,25 @@ export default function LiveEventTable({ events }: LiveEventTableProps) {
                     {JSON.stringify(evt.original.data, null, 2)}
                   </pre>
                 </details>
+              </td>
+              <td className="p-2 text-neutral-300">
+                <div className="flex flex-wrap gap-2 items-center">
+                  {evt.serviceName && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-neutral-700"><FontAwesomeIcon icon={faServer} className={iconClass} />{evt.serviceName}</span>
+                  )}
+                  {(evt.method || evt.path) && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-neutral-700"><FontAwesomeIcon icon={faArrowRight} className={iconClass} /><span className="font-mono">{evt.method}</span><span className="text-neutral-500">{(evt.path || '').slice(0, 40)}</span></span>
+                  )}
+                  {evt.userId && (
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-white ${userColorClass(evt.userId)}`}><FontAwesomeIcon icon={faUser} className="opacity-90" />{evt.userId}</span>
+                  )}
+                  {evt.userAgent && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-neutral-700" title={evt.userAgent}><FontAwesomeIcon icon={faCompass} className={iconClass} /><span className="truncate max-w-[160px]">{evt.userAgent.split(' ').slice(-1)[0]}</span></span>
+                  )}
+                  {evt.contentLength != null && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-neutral-700"><FontAwesomeIcon icon={faBox} className={iconClass} />{fmtBytes(evt.contentLength)}</span>
+                  )}
+                </div>
               </td>
             </tr>
           ))}

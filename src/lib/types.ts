@@ -12,6 +12,7 @@ export interface AIEventPayload {
   correlationId?: string;
   statusCode?: number;
   responseTimeMs?: number;
+  serviceName?: string; // Service identifier for grouping
   metadata?: Record<string, unknown>;
 }
 
@@ -55,11 +56,23 @@ export interface EventCount {
   percentage?: number;
 }
 
+export interface ServiceStats {
+  serviceName: string;
+  eventCount: number;
+  uniqueEvents: number;
+  avgResponseTime?: number;
+  errorRate?: number; // percentage
+  lastSeen: string;
+  topEvents: EventCount[];
+}
+
 export interface EventStatistics {
   totalEventCount: number;
   totalUniqueEvents: number;
+  totalServices: number;
   perDay: { date: string; count: number }[];
   topEvents: EventCount[];
+  serviceBreakdown: ServiceStats[];
 }
 
 export interface BatchTrackEventItem {
@@ -77,6 +90,7 @@ export interface StoredEvent {
   id: string;
   name: string;
   userId?: string | null;
+  serviceName?: string; // Service identifier
   payload: AIEventPayload;
   timestamp: number; // epoch ms
 }
@@ -91,6 +105,7 @@ export interface EventItemDTO {
   name: string;
   timestamp: string; // ISO
   userId?: string;
+  serviceName?: string; // Service identifier
   correlationId?: string;
   statusCode?: number;
   responseTimeMs?: number;

@@ -75,3 +75,26 @@ export async function getRangeEvents(params: { from: string; to: string; userSco
   return res.json();
 }
 
+export interface ServerMetrics {
+  memory: {
+    rss: number;
+    heapUsed: number;
+    heapTotal: number;
+    external: number;
+    arrayBuffers: number;
+    rssMB: number;
+    heapUsedMB: number;
+    heapTotalMB: number;
+  };
+  eventsLast5m: number;
+  uptimeSec: number;
+  pid: number;
+  timestamp: number; // epoch ms
+}
+
+export async function getMetrics(): Promise<ServerMetrics> {
+  const res = await fetch(`/api/events/metrics`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+

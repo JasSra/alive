@@ -1,5 +1,7 @@
 "use client";
 import { memo, useState, useCallback, useRef, useEffect } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faMagnifyingGlassPlus, faMagnifyingGlassMinus, faArrowsToDot, faRotate } from "@fortawesome/free-solid-svg-icons";
 
 export interface TLItem {
   id: string;
@@ -18,29 +20,45 @@ const Timeline = memo(function Timeline({ items }: TimelineProps) {
   const [selectedItem, setSelectedItem] = useState<TLItem | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState(0);
+  const dragging = useRef<{ startX: number; startPan: number } | null>(null);
+  const animRef = useRef<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   
   // Auto-scroll to latest events
   const [autoScroll, setAutoScroll] = useState(true);
   
-  useEffect(() => {
-    if (autoScroll && items.length > 0) {
-      // Auto-pan to show the latest events
-      const latestTime = Math.max(...items.map(i => i.t));
-      const oldestTime = Math.min(...items.map(i => i.t));
-      const span = latestTime - oldestTime;
-      if (span > 0) {
-        setPanOffset(-(span * 0.1)); // Show latest 90% of timeline
-      }
-    }
-  }, [items, autoScroll]);
-
   // Normalize to fit width with zoom and pan
   const minT = items.length ? Math.min(...items.map((i) => i.t)) : 0;
   const maxT = items.length ? Math.max(...items.map((i) => i.t)) : 1;
   const span = Math.max(1, (maxT - minT) / zoomLevel);
   const viewStart = minT + panOffset;
   const viewEnd = viewStart + span;
+
+  useEffect(() => {
+    if (autoScroll && items.length > 0) {
+      // Auto-pan to show the latest events
+      const latestTime = Math.max(...items.map(i => i.t));
+      const oldestTime = Math.min(...items.map(i => i.t));
+      const windowSpan = latestTime - oldestTime;
+      if (windowSpan > 0) {
+        setPanOffset(-(windowSpan * 0.1)); // Show latest 90% of timeline
+      }
+    }
+  }, [items, autoScroll]);
+
+  // EEG-like motion: gently advance the window when autoScroll is on
+  useEffect(() => {
+    if (!autoScroll) return;
+    const tick = () => {
+      // Advance pan by a tiny fraction to simulate motion
+      setPanOffset((p) => p + span * 0.0005);
+      animRef.current = requestAnimationFrame(tick);
+    };
+    animRef.current = requestAnimationFrame(tick);
+    return () => { if (animRef.current) cancelAnimationFrame(animRef.current); animRef.current = null; };
+  }, [autoScroll, span]);
+
+  // span/viewStart/viewEnd moved up for ordering
   
   const formatUtcTime = (t: number) => {
     const d = new Date(t);
@@ -107,7 +125,7 @@ const Timeline = memo(function Timeline({ items }: TimelineProps) {
             disabled={zoomLevel >= 10}
             title="Zoom in"
           >
-            <span aria-hidden className="fa-solid fa-magnifying-glass-plus" />
+            <FontAwesomeIcon icon={faMagnifyingGlassPlus} />
           </button>
           <button
             onClick={() => handleZoom(-0.2)}
@@ -115,19 +133,19 @@ const Timeline = memo(function Timeline({ items }: TimelineProps) {
             disabled={zoomLevel <= 0.1}
             title="Zoom out"
           >
-            <span aria-hidden className="fa-solid fa-magnifying-glass-minus" />
+            <FontAwesomeIcon icon={faMagnifyingGlassMinus} />
           </button>
           <button
             onClick={resetView}
             className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 rounded border border-neutral-600 text-white"
           >
-            <span aria-hidden className="fa-solid fa-arrows-to-dot" /> Reset
+            <FontAwesomeIcon icon={faArrowsToDot} /> Reset
           </button>
           <button
             onClick={() => setAutoScroll(!autoScroll)}
             className={`px-2 py-1 rounded border ${autoScroll ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200' : 'bg-neutral-800 border-neutral-600 text-white'}`}
           >
-            <span aria-hidden className="fa-solid fa-rotate" /> Auto-scroll
+            <FontAwesomeIcon icon={faRotate} /> Auto-scroll
           </button>
         </div>
         <div className="flex items-center gap-2 text-neutral-400">
@@ -149,6 +167,20 @@ const Timeline = memo(function Timeline({ items }: TimelineProps) {
             const delta = e.deltaY > 0 ? -0.1 : 0.1;
             handleZoom(delta, e.clientX);
           }}
+          onMouseDown={(e) => {
+            const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+            dragging.current = { startX: e.clientX - rect.left, startPan: panOffset };
+            setAutoScroll(false);
+          }}
+          onMouseMove={(e) => {
+            if (!dragging.current) return;
+            const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+            const dx = (e.clientX - rect.left) - dragging.current.startX;
+            const timeDelta = (dx / (width - pad * 2)) * span;
+            setPanOffset(dragging.current.startPan - timeDelta);
+          }}
+          onMouseUp={() => { dragging.current = null; }}
+          onMouseLeave={() => { dragging.current = null; }}
         >
           {/* Background grid */}
           <defs>

@@ -1,17 +1,22 @@
 "use client";
-import * as d3 from "d3";
-import { memo, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ChartConfig } from "@/lib/types";
 import { getEventCountsApi, getStatistics, getRangeEvents } from "@/lib/api";
 import { rangeToFromTo } from "@/lib/time";
 
+// Plotly needs dynamic import to avoid SSR issues
+type PlotComponent = React.ComponentType<Record<string, unknown>>;
+const Plot = dynamic(() => import("react-plotly.js"), { ssr: false }) as unknown as PlotComponent;
+
 interface ChartRendererProps {
   config: ChartConfig;
   range: string;
+  onMaximize?: (cfg: ChartConfig) => void;
 }
 
-const ChartRenderer = memo(function ChartRenderer({ config, range }: ChartRendererProps) {
-  const svgRef = useRef<SVGSVGElement | null>(null);
+const ChartRenderer = memo(function ChartRenderer({ config, range, onMaximize }: ChartRendererProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   type DayPoint = Record<string, string | number>;
   type StatsShape = { perDay: DayPoint[] } | null;
   type CountPoint = Record<string, string | number>;
@@ -19,6 +24,7 @@ const ChartRenderer = memo(function ChartRenderer({ config, range }: ChartRender
   type RangeEvt = { timestamp: string; statusCode?: number; responseTimeMs?: number };
   const [data, setData] = useState<StatsShape | CountsShape>(null);
   const [rangeData, setRangeData] = useState<RangeEvt[] | null>(null);
+  const [width, setWidth] = useState<number>(600);
 
   // fetch data when config or range changes
   useEffect(() => {
@@ -48,79 +54,64 @@ const ChartRenderer = memo(function ChartRenderer({ config, range }: ChartRender
 
   const height = config.height ?? 220;
 
-  // render chart with D3
+  // Resize observer for responsive Plotly sizing
   useEffect(() => {
-  const svg = d3.select(svgRef.current);
-  svg.selectAll("*").remove();
-  if (!data && !(config.api.kind === "range" && rangeData)) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(() => setWidth(el.clientWidth));
+    obs.observe(el);
+    setWidth(el.clientWidth);
+    return () => obs.disconnect();
+  }, []);
 
-    const width = svgRef.current?.clientWidth ?? 600;
-    svg.attr("viewBox", `0 0 ${width} ${height}`);
-    const margin = { top: 20, right: 16, bottom: 28, left: 36 };
-    const innerW = width - margin.left - margin.right;
-    const innerH = height - margin.top - margin.bottom;
+  const plot = useMemo(() => {
+    const baseLayout = {
+      autosize: true,
+      height,
+      margin: { l: 36, r: 12, t: 10, b: 28 },
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
+      font: { size: 11 },
+      xaxis: { automargin: true, tickfont: { size: 10 }, tickangle: 0, showgrid: false },
+      yaxis: { automargin: true, tickfont: { size: 10 }, gridcolor: "rgba(127,127,127,0.2)", rangemode: "tozero" },
+      showlegend: false,
+      template: undefined as unknown as string,
+    } as const;
 
-    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
-
-  if (config.api.kind === "statistics" && data && Array.isArray((data as StatsShape)!.perDay)) {
+    if (config.api.kind === "statistics" && data && (data as StatsShape)?.perDay) {
       const perDay = (data as StatsShape)!.perDay as DayPoint[];
-      // Line chart over perDay
-      const series = config.series[0];
-      const x = d3
-        .scaleBand()
-        .domain(perDay.map((d) => String(d[config.xKey])))
-        .range([0, innerW])
-        .padding(0.1);
-      const y = d3
-        .scaleLinear()
-        .domain([0, d3.max(perDay, (d) => Number(d[series.valueKey]) || 0) || 0])
-        .nice()
-        .range([innerH, 0]);
-
-      // axis
-      g.append("g").attr("transform", `translate(0,${innerH})`).call(d3.axisBottom(x).tickSizeOuter(0));
-      g.append("g").call(d3.axisLeft(y).ticks(5));
-
-      // line
-      const line = d3
-        .line<DayPoint>()
-        .x((d) => (x(String(d[config.xKey])) ?? 0) + x.bandwidth() / 2)
-        .y((d) => y(Number(d[series.valueKey]) || 0));
-      g.append("path")
-        .datum(perDay)
-        .attr("fill", "none")
-        .attr("stroke", series.color ?? "#6366f1")
-        .attr("stroke-width", 2)
-        .attr("d", line as unknown as string);
+      const s = config.series[0];
+      return {
+        data: [
+          {
+            type: "scatter",
+            mode: "lines+markers",
+            x: perDay.map((d) => String(d[config.xKey])),
+            y: perDay.map((d) => Number(d[s.valueKey]) || 0),
+            line: { color: s.color ?? "#6366f1", width: 2 },
+            marker: { size: 4 },
+            hovertemplate: "%{x}<br>%{y}<extra></extra>",
+          },
+        ],
+  layout: baseLayout,
+      };
     }
 
     if (config.api.kind === "counts" && Array.isArray(data)) {
-      // Bar chart of event counts
       const s = config.series[0];
-      const x = d3
-        .scaleBand()
-        .domain((data as CountPoint[]).map((d) => String(d[config.xKey])))
-        .range([0, innerW])
-        .padding(0.1);
-      const y = d3
-        .scaleLinear()
-        .domain([0, d3.max((data as CountPoint[]), (d) => Number(d[s.valueKey]) || 0) || 0])
-        .nice()
-        .range([innerH, 0]);
-
-      g.append("g").attr("transform", `translate(0,${innerH})`).call(d3.axisBottom(x).tickSizeOuter(0));
-      g.append("g").call(d3.axisLeft(y).ticks(5));
-
-      g
-        .append("g")
-        .selectAll("rect")
-        .data(data as CountPoint[])
-        .join("rect")
-        .attr("x", (d) => x(String(d[config.xKey])) ?? 0)
-        .attr("y", (d) => y(Number(d[s.valueKey]) || 0))
-        .attr("width", x.bandwidth())
-        .attr("height", (d) => innerH - y(Number(d[s.valueKey]) || 0))
-        .attr("fill", s.color ?? "#10b981");
+      const arr = data as CountPoint[];
+      return {
+        data: [
+          {
+            type: "bar",
+            x: arr.map((d) => String(d[config.xKey])),
+            y: arr.map((d) => Number(d[s.valueKey]) || 0),
+            marker: { color: s.color ?? "#10b981" },
+            hovertemplate: "%{x}<br>%{y}<extra></extra>",
+          },
+        ],
+  layout: { ...baseLayout, xaxis: { ...baseLayout.xaxis, tickangle: -30 } },
+      };
     }
 
     if (config.api.kind === "range" && Array.isArray(rangeData) && config.derived === "latency-histogram") {
@@ -140,66 +131,80 @@ const ChartRenderer = memo(function ChartRenderer({ config, range }: ChartRender
         const idx = edges.findIndex((lo, i) => v >= lo && v < edges[i + 1]);
         if (idx >= 0 && idx < counts.length) counts[idx] += 1;
       }
-
-      const x = d3.scaleBand().domain(labels).range([0, innerW]).padding(0.1);
-      const y = d3.scaleLinear().domain([0, d3.max(counts) || 0]).nice().range([innerH, 0]);
-
-      g.append("g").attr("transform", `translate(0,${innerH})`).call(d3.axisBottom(x).tickSizeOuter(0)).selectAll("text").style("font-size", "10px");
-      g.append("g").call(d3.axisLeft(y).ticks(5));
-
-      g
-        .append("g")
-        .selectAll("rect")
-        .data(labels.map((lab, i) => ({ lab, v: counts[i] })))
-        .join("rect")
-        .attr("x", (d) => x(d.lab) ?? 0)
-        .attr("y", (d) => y(d.v))
-        .attr("width", x.bandwidth())
-        .attr("height", (d) => innerH - y(d.v))
-        .attr("fill", config.series[0]?.color ?? "#06b6d4");
+      return {
+        data: [
+          {
+            type: "bar",
+            x: labels,
+            y: counts,
+            marker: { color: config.series[0]?.color ?? "#06b6d4" },
+            hovertemplate: "%{x}<br>%{y}<extra></extra>",
+          },
+        ],
+  layout: { ...baseLayout, barmode: "overlay", xaxis: { ...baseLayout.xaxis, tickangle: -20 } },
+      };
     }
 
     if (config.api.kind === "range" && Array.isArray(rangeData) && config.derived === "error-rate") {
-      const byDay = d3
-        .rollups(
-          rangeData as RangeEvt[],
-          (vals) => {
-            const total = vals.length;
-            const errors = vals.filter((v) => typeof v.statusCode === "number" && v.statusCode >= 400).length;
-            return { total, errors, pct: total ? (errors / total) * 100 : 0 };
-          },
-          (v) => {
-            const d = new Date(v.timestamp);
-            return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-          },
-        )
-        .map(([date, agg]) => ({ date, pct: agg.pct }))
+      // Aggregate by day
+      const map = new Map<string, { total: number; errors: number }>();
+      for (const v of rangeData as RangeEvt[]) {
+        const d = new Date(v.timestamp);
+        const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+        const rec = map.get(key) ?? { total: 0, errors: 0 };
+        rec.total += 1;
+        if (typeof v.statusCode === "number" && v.statusCode >= 400) rec.errors += 1;
+        map.set(key, rec);
+      }
+      const rows = [...map.entries()]
+        .map(([date, agg]) => ({ date, pct: agg.total ? (agg.errors / agg.total) * 100 : 0 }))
         .sort((a, b) => (a.date < b.date ? -1 : 1));
-
-      const x = d3.scaleBand().domain(byDay.map((d) => d.date)).range([0, innerW]).padding(0.1);
-      const y = d3.scaleLinear().domain([0, d3.max(byDay, (d) => d.pct) || 0]).nice().range([innerH, 0]);
-
-      g.append("g").attr("transform", `translate(0,${innerH})`).call(d3.axisBottom(x).tickSizeOuter(0));
-      g.append("g").call(d3.axisLeft(y).ticks(5).tickFormat((v) => `${v}%` as unknown as string));
-
-      const line = d3
-        .line<{ date: string; pct: number }>()
-        .x((d) => (x(d.date) ?? 0) + x.bandwidth() / 2)
-        .y((d) => y(d.pct));
-      g
-        .append("path")
-        .datum(byDay)
-        .attr("fill", "none")
-        .attr("stroke", config.series[0]?.color ?? "#ef4444")
-        .attr("stroke-width", 2)
-        .attr("d", line as unknown as string);
+      return {
+        data: [
+          {
+            type: "scatter",
+            mode: "lines+markers",
+            x: rows.map((r) => r.date),
+            y: rows.map((r) => r.pct),
+            line: { color: config.series[0]?.color ?? "#ef4444", width: 2 },
+            marker: { size: 4 },
+            hovertemplate: "%{x}<br>%{y:.1f}%<extra></extra>",
+          },
+        ],
+  layout: { ...baseLayout, yaxis: { ...baseLayout.yaxis, ticksuffix: "%", rangemode: "tozero" } },
+      };
     }
-  }, [data, config, height, rangeData]);
+
+    return { data: [], layout: baseLayout };
+  }, [config, data, rangeData, height]);
+
+  const modebar = useMemo(
+    () => ({ displaylogo: false, modeBarButtonsToRemove: ["toImage", "zoomIn2d", "zoomOut2d", "autoScale2d", "lasso2d"] as string[] }),
+    []
+  );
 
   return (
-    <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-4 bg-white dark:bg-neutral-900">
-      <div className="text-sm font-medium mb-2">{config.title}</div>
-      <svg ref={svgRef} className="w-full" height={height} role="img" aria-label={config.title} />
+    <div ref={containerRef} className="rounded-xl border border-neutral-200 dark:border-neutral-800 p-3 bg-white dark:bg-neutral-900 shadow-sm">
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-sm font-medium truncate" title={config.title}>{config.title}</div>
+        {onMaximize && (
+          <button
+            aria-label="Maximize chart"
+            className="text-xs px-2 py-1 rounded-md border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            onClick={() => onMaximize(config)}
+          >
+            Expand
+          </button>
+        )}
+      </div>
+      <Plot
+        data={plot.data as unknown}
+        layout={{ ...(plot.layout as Record<string, unknown>), width }}
+        useResizeHandler={true}
+        className="w-full"
+        config={modebar as unknown}
+        style={{ width: "100%", height }}
+      />
     </div>
   );
 });

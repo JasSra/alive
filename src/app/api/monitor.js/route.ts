@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     serverUrl: DETECTED_ORIGIN + '/api/events',
     sseUrl: DETECTED_ORIGIN + '/api/events/stream',
     userId: 'browser-monitor',
+    serviceName: null, // Service identifier for grouping events
     batchSize: 10,
     flushInterval: 2000, // 2 seconds
     maxRetries: 3,
@@ -83,6 +84,7 @@ export async function GET(request: NextRequest) {
     timestamp: timestamp(),
     timestampMs: now(),
     userId: CONFIG.userId,
+    serviceName: CONFIG.serviceName || window.location.hostname || 'unknown',
     url: window.location.href,
     userAgent: navigator.userAgent,
     origin: DETECTED_ORIGIN,
@@ -304,6 +306,19 @@ export async function GET(request: NextRequest) {
     const eventsToSend = [...eventQueue];
     eventQueue = [];
 
+    // Log our own network request
+    const networkStartTime = now();
+    const correlationId = generateId();
+    
+    // Create monitor request event (but don't queue it to avoid infinite loop)
+    const monitorRequestEvent = createEvent('monitor-network', 'monitor-request', {
+      correlationId,
+      url: CONFIG.serverUrl,
+      method: 'POST',
+      eventCount: eventsToSend.length,
+      timestamp: timestamp()
+    });
+
     try {
       const response = await fetch(CONFIG.serverUrl, {
         method: 'POST',
@@ -311,29 +326,82 @@ export async function GET(request: NextRequest) {
         credentials: CONFIG.credentials,
         headers: {
           'Content-Type': 'application/json',
+          'X-Monitor-Request': 'true', // Mark as monitor request
         },
         body: JSON.stringify({ events: eventsToSend })
       });
 
+      const networkEndTime = now();
+      const responseTime = networkEndTime - networkStartTime;
+
       if (!response.ok) {
+        // Log monitor network error
+        const errorEvent = createEvent('monitor-network', 'monitor-error', {
+          correlationId,
+          statusCode: response.status,
+          statusText: response.statusText,
+          responseTimeMs: responseTime,
+          error: \`Server responded with \${response.status}: \${response.statusText}\`,
+          url: CONFIG.serverUrl
+        });
+        
+        // Store monitor errors in a separate array to display in UI
+        if (!window.monitorErrors) window.monitorErrors = [];
+        window.monitorErrors.push(errorEvent);
+        if (window.monitorErrors.length > 10) window.monitorErrors.shift(); // Keep only last 10
+        
         throw new Error(\`Server responded with \${response.status}: \${response.statusText}\`);
       }
 
       const result = await response.json();
+      
+      // Log successful monitor network response
+      const successEvent = createEvent('monitor-network', 'monitor-success', {
+        correlationId,
+        statusCode: response.status,
+        responseTimeMs: responseTime,
+        eventsSent: eventsToSend.length,
+        totalProcessed: result.total,
+        url: CONFIG.serverUrl
+      });
+      
+      // Store monitor successes for UI display
+      if (!window.monitorLogs) window.monitorLogs = [];
+      window.monitorLogs.push(successEvent);
+      if (window.monitorLogs.length > 20) window.monitorLogs.shift(); // Keep only last 20
+      
       // Only log in debug mode
       if (!isHidden) {
-        console.log(\`[Monitor] Sent \${eventsToSend.length} events to server, total: \${result.total}\`);
+        console.log(\`[Monitor] ✅ Sent \${eventsToSend.length} events (\${responseTime}ms) - Total: \${result.total}\`);
       }
     } catch (error) {
-      console.error('[Monitor] Failed to send events:', error);
+      const networkEndTime = now();
+      const responseTime = networkEndTime - networkStartTime;
+      
+      // Log monitor network error
+      const errorEvent = createEvent('monitor-network', 'monitor-error', {
+        correlationId,
+        error: error.message,
+        responseTimeMs: responseTime,
+        url: CONFIG.serverUrl,
+        retryAttempt: eventsToSend[0]?.retryCount || 0
+      });
+      
+      if (!window.monitorErrors) window.monitorErrors = [];
+      window.monitorErrors.push(errorEvent);
+      if (window.monitorErrors.length > 10) window.monitorErrors.shift();
+      
+      console.error(\`[Monitor] ❌ Failed to send events to \${CONFIG.serverUrl}:\`, error);
+      
       // Re-queue events for retry (with limit)
       if (eventsToSend[0]?.retryCount < CONFIG.maxRetries) {
         eventsToSend.forEach(event => {
           event.retryCount = (event.retryCount || 0) + 1;
           eventQueue.push(event);
         });
+        console.warn(\`[Monitor] 🔄 Retrying \${eventsToSend.length} events (attempt \${(eventsToSend[0]?.retryCount || 0) + 1}/\${CONFIG.maxRetries})\`);
       } else {
-        console.warn(\`[Monitor] Dropping \${eventsToSend.length} events after \${CONFIG.maxRetries} retries\`);
+        console.warn(\`[Monitor] 🗑️ Dropping \${eventsToSend.length} events after \${CONFIG.maxRetries} retries\`);
       }
     }
   };
@@ -539,6 +607,78 @@ export async function GET(request: NextRequest) {
         .event-list::-webkit-scrollbar-thumb:hover {
           background: #58a6ff;
         }
+        .config-section {
+          background: #161b22;
+          border: 1px solid #30363d;
+          border-radius: 4px;
+          padding: 6px;
+          margin: 4px 6px;
+          font-size: 9px;
+        }
+        .config-title {
+          color: #58a6ff;
+          font-size: 9px;
+          font-weight: 600;
+          margin-bottom: 4px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .config-input {
+          width: 100%;
+          background: #0d1117;
+          border: 1px solid #30363d;
+          color: #c9d1d9;
+          padding: 3px 5px;
+          font-size: 9px;
+          font-family: monospace;
+          border-radius: 3px;
+          margin-bottom: 4px;
+          box-sizing: border-box;
+        }
+        .config-input:focus {
+          outline: none;
+          border-color: #58a6ff;
+          box-shadow: 0 0 0 1px #58a6ff;
+        }
+        .monitor-status {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 8px;
+          color: #6e7681;
+          margin: 2px 6px;
+          padding: 3px 6px;
+          background: #161b22;
+          border-radius: 3px;
+        }
+        .status-indicator {
+          display: inline-block;
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          margin-right: 3px;
+        }
+        .status-success { background: #238636; }
+        .status-error { background: #f85149; }
+        .status-warning { background: #fb8500; }
+        .network-logs {
+          max-height: 80px;
+          overflow-y: auto;
+          font-size: 8px;
+          background: #0d1117;
+          border: 1px solid #30363d;
+          border-radius: 3px;
+          padding: 3px;
+        }
+        .network-log-entry {
+          padding: 1px 3px;
+          margin: 1px 0;
+          border-radius: 2px;
+          font-family: monospace;
+        }
+        .log-success { background: rgba(35, 134, 54, 0.15); color: #7dda58; }
+        .log-error { background: rgba(248, 81, 73, 0.15); color: #ff6b6b; }
+        .log-timestamp { color: #6e7681; font-size: 7px; }
       </style>
       
       <div class="monitor-header">
@@ -546,8 +686,35 @@ export async function GET(request: NextRequest) {
         <div class="monitor-controls">
           <button class="monitor-btn" id="toggle-monitor">Stop</button>
           <button class="monitor-btn" id="clear-events">Clear</button>
+          <button class="monitor-btn" id="toggle-config">Config</button>
           <button class="monitor-btn" id="hide-monitor">Hide</button>
           <button class="monitor-btn danger" id="close-monitor">×</button>
+        </div>
+      </div>
+      
+      <div class="monitor-status">
+        <span>
+          <span class="status-indicator" id="connection-status"></span>
+          <span id="connection-text">Connecting...</span>
+        </span>
+        <span id="last-request-time">No requests yet</span>
+      </div>
+      
+      <div class="config-section" id="config-section" style="display: none;">
+        <div class="config-title">🔧 Service Configuration</div>
+        <div>
+          <label style="display: block; margin-bottom: 2px; color: #8b949e;">Service Name:</label>
+          <input type="text" class="config-input" id="service-name-input" placeholder="my-service">
+          <button class="monitor-btn" id="update-service-name" style="font-size: 8px;">Update Name</button>
+        </div>
+        <div style="margin-top: 8px;">
+          <label style="display: block; margin-bottom: 2px; color: #8b949e;">API Endpoint:</label>
+          <input type="text" class="config-input" id="server-url-input" placeholder="http://localhost:3000/api/events">
+          <button class="monitor-btn" id="update-server-url" style="font-size: 8px;">Update URL</button>
+        </div>
+        <div class="config-title" style="margin-top: 8px;">📡 Network Activity</div>
+        <div class="network-logs" id="network-logs">
+          <div style="color: #6e7681; text-align: center; font-size: 7px; padding: 8px;">Network activity will appear here...</div>
         </div>
       </div>
       
@@ -580,6 +747,16 @@ export async function GET(request: NextRequest) {
     ui.querySelector('#clear-events').onclick = clearEvents;
     ui.querySelector('#hide-monitor').onclick = hideMonitor;
     ui.querySelector('#close-monitor').onclick = closeMonitor;
+    ui.querySelector('#toggle-config').onclick = toggleConfig;
+    ui.querySelector('#update-server-url').onclick = updateServerUrl;
+    ui.querySelector('#update-service-name').onclick = updateServiceName;
+    
+    // Initialize config inputs with current values
+    ui.querySelector('#server-url-input').value = CONFIG.serverUrl;
+    ui.querySelector('#service-name-input').value = CONFIG.serviceName || '';
+    
+    // Update connection status
+    updateConnectionStatus();
 
     // Make draggable
     makeDraggable(ui);
@@ -612,6 +789,10 @@ export async function GET(request: NextRequest) {
     monitorUI.querySelector('#queue-count').textContent = eventQueue.length;
     monitorUI.querySelector('#current-window').textContent = 
       currentTimeWindow < 60 ? \`T-\${currentTimeWindow}M\` : \`T-\${currentTimeWindow/60}H\`;
+
+    // Update connection status and network logs
+    updateConnectionStatus();
+    updateNetworkLogs();
 
     // Update event list
     const eventList = monitorUI.querySelector('#event-list');
@@ -756,6 +937,125 @@ export async function GET(request: NextRequest) {
     }
   };
 
+  // Configuration functions
+  const toggleConfig = () => {
+    if (!monitorUI) return;
+    const configSection = monitorUI.querySelector('#config-section');
+    const isVisible = configSection.style.display !== 'none';
+    configSection.style.display = isVisible ? 'none' : 'block';
+    
+    // Update button text
+    const toggleBtn = monitorUI.querySelector('#toggle-config');
+    toggleBtn.textContent = isVisible ? 'Config' : 'Hide Config';
+    toggleBtn.classList.toggle('active', !isVisible);
+  };
+
+  const updateServerUrl = () => {
+    if (!monitorUI) return;
+    const input = monitorUI.querySelector('#server-url-input');
+    const newUrl = input.value.trim();
+    
+    if (!newUrl) {
+      alert('Please enter a valid server URL');
+      return;
+    }
+    
+    // Update configuration
+    CONFIG.serverUrl = newUrl;
+    CONFIG.sseUrl = newUrl.replace('/api/events', '/api/events/stream');
+    
+    console.log(\`[Monitor] 🔄 Server URL updated to: \${newUrl}\`);
+    
+    // Clear any pending events and restart monitoring
+    eventQueue = [];
+    if (isMonitoring) {
+      stopMonitoring();
+      setTimeout(() => {
+        startMonitoring();
+        console.log('[Monitor] ✅ Restarted monitoring with new server URL');
+      }, 100);
+    }
+    
+    updateConnectionStatus();
+    updateNetworkLogs();
+  };
+
+  const updateServiceName = () => {
+    if (!monitorUI) return;
+    const input = monitorUI.querySelector('#service-name-input');
+    const newServiceName = input.value.trim();
+    
+    // Update configuration (allow empty to use default)
+    CONFIG.serviceName = newServiceName || null;
+    
+    console.log(\`[Monitor] 🏷️ Service name updated to: \${CONFIG.serviceName || 'auto-detected'}\`);
+    
+    // Log an event to mark the service name change
+    const serviceEvent = createEvent('monitor-config', 'service-name-changed', {
+      oldServiceName: CONFIG.serviceName,
+      newServiceName: newServiceName || null,
+      autoDetected: !newServiceName
+    });
+    
+    addEvent(serviceEvent);
+    
+    updateConnectionStatus();
+  };
+
+  const updateConnectionStatus = () => {
+    if (!monitorUI) return;
+    const statusIndicator = monitorUI.querySelector('#connection-status');
+    const statusText = monitorUI.querySelector('#connection-text');
+    const lastRequestTime = monitorUI.querySelector('#last-request-time');
+    
+    // Check recent monitor errors/successes
+    const recentErrors = window.monitorErrors || [];
+    const recentLogs = window.monitorLogs || [];
+    const recentActivity = [...recentErrors, ...recentLogs].sort((a, b) => b.timestampMs - a.timestampMs);
+    
+    if (recentActivity.length === 0) {
+      statusIndicator.className = 'status-indicator status-warning';
+      statusText.textContent = 'No activity';
+      lastRequestTime.textContent = 'No requests yet';
+    } else {
+      const lastActivity = recentActivity[0];
+      const wasError = recentErrors.includes(lastActivity);
+      
+      statusIndicator.className = \`status-indicator \${wasError ? 'status-error' : 'status-success'}\`;
+      statusText.textContent = wasError ? 'Connection Error' : 'Connected';
+      lastRequestTime.textContent = new Date(lastActivity.timestampMs).toLocaleTimeString();
+    }
+  };
+
+  const updateNetworkLogs = () => {
+    if (!monitorUI) return;
+    const logsContainer = monitorUI.querySelector('#network-logs');
+    
+    const recentErrors = (window.monitorErrors || []).slice(-5);
+    const recentLogs = (window.monitorLogs || []).slice(-5);
+    const allLogs = [...recentErrors, ...recentLogs].sort((a, b) => b.timestampMs - a.timestampMs).slice(0, 8);
+    
+    if (allLogs.length === 0) {
+      logsContainer.innerHTML = '<div style="color: #6e7681; text-align: center; font-size: 7px; padding: 8px;">Network activity will appear here...</div>';
+      return;
+    }
+    
+    logsContainer.innerHTML = allLogs.map(log => {
+      const isError = (window.monitorErrors || []).includes(log);
+      const time = new Date(log.timestampMs).toLocaleTimeString();
+      const status = isError ? 'ERROR' : 'SUCCESS';
+      const responseTime = log.responseTimeMs ? \` (\${log.responseTimeMs}ms)\` : '';
+      
+      return \`
+        <div class="network-log-entry \${isError ? 'log-error' : 'log-success'}">
+          <span class="log-timestamp">\${time}</span> 
+          \${status}\${responseTime}
+          \${isError && log.error ? \` - \${log.error.substring(0, 40)}...\` : ''}
+        </div>
+      \`;
+    }).join('');
+  };
+
   // Main control functions
   const startMonitoring = () => {
     if (isMonitoring) return;
@@ -857,13 +1157,34 @@ export async function GET(request: NextRequest) {
     setTimeWindow,
     getEvents: () => capturedEvents,
     getConfig: () => CONFIG,
+    setServerUrl: (url) => {
+      CONFIG.serverUrl = url;
+      CONFIG.sseUrl = url.replace('/api/events', '/api/events/stream');
+      console.log(\`[Monitor] Server URL updated to: \${url}\`);
+    },
+    setServiceName: (serviceName) => {
+      CONFIG.serviceName = serviceName || null;
+      console.log(\`[Monitor] Service name updated to: \${CONFIG.serviceName || 'auto-detected'}\`);
+      if (monitorUI) {
+        monitorUI.querySelector('#service-name-input').value = serviceName || '';
+      }
+    },
+    getServiceName: () => CONFIG.serviceName || window.location.hostname || 'unknown',
+    getNetworkLogs: () => ({
+      errors: window.monitorErrors || [],
+      success: window.monitorLogs || []
+    }),
     isHidden: () => isHidden,
-    toggle: () => isHidden ? showMonitor() : hideMonitor()
+    toggle: () => isHidden ? showMonitor() : hideMonitor(),
+    toggleConfig: toggleConfig
   };
 
 })();
 
-console.log('[Monitor] Script loaded. Use Ctrl+Shift+M to toggle visibility, or window.LiveMonitor for API access.');
+console.log('[Monitor] 🚀 Script loaded successfully!');
+console.log('[Monitor] 📘 Controls: Ctrl+Shift+M (toggle) | window.LiveMonitor (API)');
+console.log('[Monitor] ⚙️ Features: Network logging, configurable server URL, debug panel');
+console.log('[Monitor] 🔧 Current server:', '${origin}/api/events');
 `;
 
   return new NextResponse(monitorScript, {

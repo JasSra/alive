@@ -1,26 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export function middleware(request: NextRequest) {
-  // Handle CORS for all API routes
+  // Enhanced CORS handling for all API routes
   if (request.nextUrl.pathname.startsWith('/api/')) {
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, X-Monitor-Request, X-User-Id, X-Session-Id, X-Correlation-Id, Accept, Origin, User-Agent, Referer',
+      'Access-Control-Allow-Credentials': 'false',
+      'Access-Control-Max-Age': '86400',
+      'Vary': 'Origin',
+    };
+
     // Handle preflight requests
     if (request.method === 'OPTIONS') {
+      console.log(`CORS preflight for ${request.nextUrl.pathname} from origin: ${request.headers.get('origin')}`);
       return new NextResponse(null, {
         status: 200,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-          'Access-Control-Max-Age': '86400',
-        },
+        headers: corsHeaders,
       });
     }
 
+    // Log incoming requests for debugging
+    console.log(`API Request: ${request.method} ${request.nextUrl.pathname} from origin: ${request.headers.get('origin')}`);
+
     // Add CORS headers to all API responses
     const response = NextResponse.next();
-    response.headers.set('Access-Control-Allow-Origin', '*');
-    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    
+    // Set all CORS headers
+    Object.entries(corsHeaders).forEach(([key, value]) => {
+      response.headers.set(key, value);
+    });
     
     return response;
   }

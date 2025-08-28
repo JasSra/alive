@@ -12,8 +12,9 @@
 
   // Configuration
   const CONFIG = {
-    serverUrl: 'http://localhost:3000/api/events',
-    sseUrl: 'http://localhost:3000/api/events/stream',
+  // Default to the Next.js dev/prod port used by this app
+  serverUrl: 'http://localhost:3001/api/events',
+  sseUrl: 'http://localhost:3001/api/events/stream',
     userId: 'browser-monitor',
     batchSize: 10,
     flushInterval: 2000, // 2 seconds
@@ -26,7 +27,16 @@
     ],
     defaultWindow: 5, // minutes
     corsMode: 'cors', // Enable CORS
-    credentials: 'omit' // No credentials needed
+    credentials: 'omit', // No credentials needed
+    // Service configuration
+    services: [
+      { name: 'frontend', color: '#007acc', enabled: true },
+      { name: 'api', color: '#28a745', enabled: true },
+      { name: 'auth', color: '#ffc107', enabled: false },
+      { name: 'database', color: '#dc3545', enabled: false },
+      { name: 'payment', color: '#6f42c1', enabled: false }
+    ],
+    defaultService: 'frontend'
   };
 
   // Global state
@@ -35,6 +45,7 @@
   let capturedEvents = [];
   let monitorUI = null;
   let currentTimeWindow = CONFIG.defaultWindow;
+  let currentService = CONFIG.defaultService;
   let flushTimer = null;
 
   // Utility functions
@@ -68,6 +79,7 @@
     timestamp: timestamp(),
     timestampMs: now(),
     userId: CONFIG.userId,
+    serviceName: currentService, // Add service name to all events
     url: window.location.href,
     userAgent: navigator.userAgent,
     ...data
@@ -389,6 +401,39 @@
           border-color: #ffa500;
           color: black;
         }
+        .service-config {
+          margin: 8px 0;
+          padding: 8px;
+          background: #1a1a1a;
+          border-radius: 4px;
+          border: 1px solid #333;
+        }
+        .service-label {
+          color: #ccc;
+          font-size: 10px;
+          margin-bottom: 4px;
+          display: block;
+        }
+        .service-badges {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 4px;
+        }
+        .service-badge {
+          padding: 2px 6px;
+          border-radius: 3px;
+          font-size: 9px;
+          cursor: pointer;
+          border: 1px solid transparent;
+          transition: all 0.2s;
+        }
+        .service-badge.active {
+          border-color: #fff;
+          box-shadow: 0 0 4px rgba(255,255,255,0.3);
+        }
+        .service-badge:hover {
+          opacity: 0.8;
+        }
         .monitor-content {
           padding: 8px;
           max-height: 60vh;
@@ -447,11 +492,15 @@
       </div>
       
       <div class="monitor-content">
+        <div class="service-config">
+          <span class="service-label">🔧 Service Configuration</span>
+          <div class="service-badges" id="service-badges"></div>
+        </div>
         <div class="time-windows" id="time-windows"></div>
         <div class="stats-row">
           <span>Events: <span id="event-count">0</span></span>
           <span>Queue: <span id="queue-count">0</span></span>
-          <span>Window: <span id="current-window">T-5M</span></span>
+          <span>Service: <span id="current-service">frontend</span></span>
         </div>
         <div class="event-list" id="event-list"></div>
       </div>
@@ -468,6 +517,18 @@
       btn.textContent = window.label;
       btn.onclick = () => setTimeWindow(window.minutes);
       windowsContainer.appendChild(btn);
+    });
+
+    // Setup service badges
+    const serviceBadgesContainer = ui.querySelector('#service-badges');
+    CONFIG.services.forEach(service => {
+      const badge = document.createElement('button');
+      badge.className = `service-badge ${service.name === currentService ? 'active' : ''}`;
+      badge.textContent = service.name;
+      badge.style.backgroundColor = service.color;
+      badge.style.color = service.color === '#ffc107' ? '#000' : '#fff';
+      badge.onclick = () => setService(service.name);
+      serviceBadgesContainer.appendChild(badge);
     });
 
     // Setup event handlers
@@ -493,6 +554,24 @@
     updateUI();
   };
 
+  const setService = (serviceName) => {
+    currentService = serviceName;
+    // Update active badge
+    const badges = monitorUI.querySelectorAll('.service-badge');
+    badges.forEach(badge => {
+      badge.classList.remove('active');
+      if (badge.textContent === serviceName) {
+        badge.classList.add('active');
+      }
+    });
+    // Update current service display
+    const currentServiceSpan = monitorUI.querySelector('#current-service');
+    if (currentServiceSpan) {
+      currentServiceSpan.textContent = serviceName;
+    }
+    console.log(`[Monitor] Switched to service: ${serviceName}`);
+  };
+
   const updateUI = () => {
     if (!monitorUI) return;
 
@@ -502,8 +581,7 @@
     // Update stats
     monitorUI.querySelector('#event-count').textContent = windowEvents.length;
     monitorUI.querySelector('#queue-count').textContent = eventQueue.length;
-    monitorUI.querySelector('#current-window').textContent = 
-      currentTimeWindow < 60 ? `T-${currentTimeWindow}M` : `T-${currentTimeWindow/60}H`;
+    monitorUI.querySelector('#current-service').textContent = currentService;
 
     // Update event list
     const eventList = monitorUI.querySelector('#event-list');
@@ -704,6 +782,7 @@
     clear: clearEvents,
     close: closeMonitor,
     setTimeWindow,
+    setService,
     getEvents: () => capturedEvents,
     getConfig: () => CONFIG
   };

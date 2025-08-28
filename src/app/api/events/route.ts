@@ -1,27 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-interface BrowserEvent {
-  id?: string;
-  type: string;
-  name: string;
-  timestamp: string;
-  timestampMs: number;
-  userId: string;
-  url: string;
-  correlationId?: string;
-  statusCode?: number;
-  responseTimeMs?: number;
-  userAgent?: string;
-  [key: string]: unknown;
-}
-
-interface ProcessedEvent extends BrowserEvent {
-  receivedAt: string;
-  serverTimestamp: number;
-}
-
-// Store events in memory (in production, you'd use a database)
-let eventStore: ProcessedEvent[] = [];
+import { getEventStore, addEvents, clearEventStore, type ProcessedEvent, type BrowserEvent } from "../eventStore";
 
 // Type for SSE clients
 interface SSEClient {
@@ -32,12 +10,14 @@ declare global {
   var sseClients: SSEClient[] | undefined;
 }
 
-// CORS headers
+// Enhanced CORS headers for cross-origin event ingestion
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, X-Monitor-Request, X-User-Id, X-Session-Id, X-Correlation-Id, Accept, Origin, User-Agent, Referer",
+  "Access-Control-Allow-Credentials": "false",
   "Access-Control-Max-Age": "86400",
+  "Vary": "Origin",
 };
 
 // Handle preflight OPTIONS requests
@@ -72,12 +52,7 @@ export async function POST(request: NextRequest) {
     }));
 
     // Store events
-    eventStore.push(...processedEvents);
-
-    // Keep only last 10000 events to prevent memory issues
-    if (eventStore.length > 10000) {
-      eventStore = eventStore.slice(-10000);
-    }
+    addEvents(processedEvents);
 
     console.log(`[API] Received ${events.length} events from browser monitor`);
 
@@ -93,6 +68,7 @@ export async function POST(request: NextRequest) {
               correlationId: event.correlationId,
               statusCode: event.statusCode,
               responseTimeMs: event.responseTimeMs,
+              serviceName: event.serviceName,
               ...event
             }
           }
@@ -112,7 +88,7 @@ export async function POST(request: NextRequest) {
       { 
         success: true, 
         received: events.length,
-        total: eventStore.length 
+        total: getEventStore().length 
       },
       {
         status: 200,
@@ -139,8 +115,9 @@ export async function GET(request: NextRequest) {
     const from = url.searchParams.get('from');
     const to = url.searchParams.get('to');
     const type = url.searchParams.get('type');
+    const serviceName = url.searchParams.get('service');
 
-    let filteredEvents = [...eventStore];
+    let filteredEvents = [...getEventStore()];
 
     // Filter by time range
     if (from) {
@@ -161,6 +138,13 @@ export async function GET(request: NextRequest) {
     if (type) {
       filteredEvents = filteredEvents.filter(event => 
         event.type.includes(type) || event.name.includes(type)
+      );
+    }
+
+    // Filter by service name
+    if (serviceName) {
+      filteredEvents = filteredEvents.filter(event => 
+        event.serviceName === serviceName
       );
     }
 
@@ -195,8 +179,7 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE() {
   try {
-    const count = eventStore.length;
-    eventStore = [];
+    const count = clearEventStore();
     
     return NextResponse.json(
       { 

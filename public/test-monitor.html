@@ -298,7 +298,7 @@
                     <div class="json-output" style="margin-top: 5px; font-size: 10px; height: auto;">
 (function() {
   const script = document.createElement('script');
-  script.src = 'http://localhost:3001/monitor.js';
+  script.src = 'http://localhost:3003/api/monitor.js';
   script.onload = () => console.log('✅ Monitor loaded!');
   script.onerror = () => console.error('❌ Failed to load');
   document.head.appendChild(script);
@@ -322,7 +322,7 @@
         let monitorScript = null;
 
         // Server configuration
-        const SERVER_URL = 'http://localhost:3001';
+        const SERVER_URL = 'http://localhost:3003';
         const API_BASE = `${SERVER_URL}/api/events`;
 
         // Update current time
@@ -589,7 +589,7 @@
             }
             
             monitorScript = document.createElement('script');
-            monitorScript.src = `${SERVER_URL}/monitor.js`;
+            monitorScript.src = `${SERVER_URL}/api/monitor.js`;
             
             monitorScript.onload = () => {
                 document.getElementById('scriptStatus').className = 'status success';

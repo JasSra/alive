@@ -3,12 +3,14 @@ import { registerSSEClient } from "@/lib/store";
 // Switch to Node.js runtime to test if Edge runtime is causing issues
 export const runtime = "nodejs";
 
-// CORS headers for SSE
+// Enhanced CORS headers for SSE cross-origin requests
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, X-Monitor-Request, Accept, Origin, User-Agent, Cache-Control",
+  "Access-Control-Allow-Credentials": "false",
   "Access-Control-Max-Age": "86400",
+  "Vary": "Origin",
 };
 
 // Handle preflight OPTIONS requests

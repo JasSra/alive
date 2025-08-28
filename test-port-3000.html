@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Port 3000 Test - Event Tracking</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 40px auto; 
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container { 
+            background: white; 
+            padding: 30px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section { 
+            margin: 20px 0; 
+            padding: 20px; 
+            border: 1px solid #ddd; 
+            border-radius: 5px;
+            background: #fafafa;
+        }
+        .success { color: #28a745; font-weight: bold; }
+        .error { color: #dc3545; font-weight: bold; }
+        .info { color: #007bff; }
+        button { 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            padding: 10px 20px; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { 
+            background: #6c757d; 
+            cursor: not-allowed; 
+        }
+        .log { 
+            background: #f8f9fa; 
+            border: 1px solid #dee2e6; 
+            border-radius: 3px; 
+            padding: 10px; 
+            margin: 10px 0; 
+            font-family: monospace; 
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-online { background-color: #28a745; }
+        .status-offline { background-color: #dc3545; }
+        .status-testing { background-color: #ffc107; }
+        .mode-controls {
+            margin-bottom: 15px;
+        }
+        .mode-controls label {
+            margin-right: 15px;
+            cursor: pointer;
+        }
+        .mode-controls input[type="radio"] {
+            margin-right: 5px;
+        }
+        .log-entry {
+            padding: 5px;
+            margin: 2px 0;
+            border-radius: 3px;
+        }
+        .log-request {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196f3;
+        }
+        .log-response {
+            background-color: #e8f5e8;
+            border-left: 4px solid #4caf50;
+        }
+        .log-event {
+            background-color: #fff3e0;
+            border-left: 4px solid #ff9800;
+        }
+        .log-error {
+            background-color: #ffebee;
+            border-left: 4px solid #f44336;
+        }
+        .hidden {
+            display: none;
+        }
+        .log-stats {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Port 3000 → Port 3001 Event Tracking Test</h1>
+        <p class="info">This page simulates your application running on port 3000 sending events to port 3001.</p>
+        
+        <div class="test-section">
+            <h3>Viewing Mode</h3>
+            <div class="mode-controls">
+                <label>
+                    <input type="radio" name="viewMode" value="all" checked onchange="changeViewMode(this.value)">
+                    All Data
+                </label>
+                <label>
+                    <input type="radio" name="viewMode" value="requests" onchange="changeViewMode(this.value)">
+                    Requests Only
+                </label>
+                <label>
+                    <input type="radio" name="viewMode" value="responses" onchange="changeViewMode(this.value)">
+                    Responses Only
+                </label>
+                <label>
+                    <input type="radio" name="viewMode" value="events" onchange="changeViewMode(this.value)">
+                    Events Only
+                </label>
+                <label>
+                    <input type="radio" name="viewMode" value="errors" onchange="changeViewMode(this.value)">
+                    Errors Only
+                </label>
+            </div>
+            <div id="modeDescription" class="info">Mode: All Data - Shows all requests, responses, events, and errors</div>
+        </div>
+
+        <div class="test-section">
+            <h3>Connection Status</h3>
+            <div id="connectionStatus">
+                <span class="status-indicator status-testing"></span>
+                <span id="statusText">Testing connection...</span>
+            </div>
+            <button onclick="testConnection()">Test Connection</button>
+        </div>
+
+        <div class="test-section">
+            <h3>Event Tracking Tests</h3>
+            <button onclick="trackUserVisit()">Track User Visit</button>
+            <button onclick="trackButtonClick()">Track Button Click</button>
+            <button onclick="trackFormSubmit()">Track Form Submit</button>
+            <button onclick="sendBatchEvents()">Send Batch Events</button>
+            <button onclick="testErrorHandling()">Test Error Handling</button>
+        </div>
+
+        <div class="test-section">
+            <h3>Advanced Tests</h3>
+            <button onclick="testCustomHeaders()">Test Custom Headers</button>
+            <button onclick="testLargePayload()">Test Large Payload</button>
+            <button onclick="stressTest()">Stress Test (10 events)</button>
+        </div>
+
+        <div class="test-section">
+            <h3>Event Log</h3>
+            <div id="logStats" class="info log-stats">
+                Requests: <span id="requestCount">0</span> | 
+                Responses: <span id="responseCount">0</span> | 
+                Events: <span id="eventCount">0</span> | 
+                Errors: <span id="errorCount">0</span>
+            </div>
+            <button onclick="clearLog()">Clear Log</button>
+            <div id="eventLog" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        const TARGET_URL = 'http://localhost:3001';
+        const logDiv = document.getElementById('eventLog');
+        const statusText = document.getElementById('statusText');
+        const statusIndicator = document.querySelector('.status-indicator');
+        
+        // Current viewing mode
+        let currentViewMode = 'all';
+        
+        // Mode descriptions
+        const modeDescriptions = {
+            'all': 'All Data - Shows all requests, responses, events, and errors',
+            'requests': 'Requests Only - Shows outgoing HTTP requests only',
+            'responses': 'Responses Only - Shows server responses only',
+            'events': 'Events Only - Shows tracked events only',
+            'errors': 'Errors Only - Shows errors and failures only'
+        };
+
+        function changeViewMode(mode) {
+            currentViewMode = mode;
+            document.getElementById('modeDescription').textContent = `Mode: ${modeDescriptions[mode]}`;
+            
+            // Filter existing log entries
+            filterLogEntries();
+            
+            // Update button states based on mode
+            updateButtonStates();
+        }
+
+        function filterLogEntries() {
+            const logEntries = logDiv.querySelectorAll('.log-entry');
+            logEntries.forEach(entry => {
+                const shouldShow = shouldShowLogEntry(entry);
+                entry.classList.toggle('hidden', !shouldShow);
+            });
+        }
+
+        function shouldShowLogEntry(entry) {
+            if (currentViewMode === 'all') return true;
+            
+            return entry.classList.contains(`log-${currentViewMode.replace('s', '')}`);
+        }
+
+        function updateButtonStates() {
+            const actionButtons = [
+                'Track User Visit', 'Track Button Click', 'Track Form Submit', 
+                'Send Batch Events', 'Test Custom Headers', 'Test Large Payload',
+                'Stress Test (10 events)'
+            ];
+            
+            const testButtons = document.querySelectorAll('button');
+            testButtons.forEach(button => {
+                const buttonText = button.textContent.trim();
+                
+                if (buttonText === 'Test Connection' || buttonText === 'Clear Log') {
+                    // These are always available
+                    button.disabled = false;
+                } else if (buttonText === 'Test Error Handling') {
+                    // Available in all, errors modes
+                    button.disabled = currentViewMode === 'requests' || currentViewMode === 'responses';
+                } else if (actionButtons.some(action => buttonText.includes(action))) {
+                    // Event tracking buttons - disabled in passive modes
+                    button.disabled = currentViewMode === 'responses' || currentViewMode === 'errors';
+                    
+                    // Update button appearance
+                    if (button.disabled) {
+                        button.style.opacity = '0.5';
+                        button.title = 'Disabled in current viewing mode';
+                    } else {
+                        button.style.opacity = '1';
+                        button.title = '';
+                    }
+                }
+            });
+        }
+
+        function updateLogStats() {
+            const requestCount = logDiv.querySelectorAll('.log-request').length;
+            const responseCount = logDiv.querySelectorAll('.log-response').length;
+            const eventCount = logDiv.querySelectorAll('.log-event').length;
+            const errorCount = logDiv.querySelectorAll('.log-error').length;
+            
+            document.getElementById('requestCount').textContent = requestCount;
+            document.getElementById('responseCount').textContent = responseCount;
+            document.getElementById('eventCount').textContent = eventCount;
+            document.getElementById('errorCount').textContent = errorCount;
+        }
+
+        function log(message, type = 'info', category = 'general') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            
+            // Determine log entry class based on category
+            let entryClass = 'log-entry';
+            switch (category) {
+                case 'request':
+                    entryClass += ' log-request';
+                    break;
+                case 'response':
+                    entryClass += ' log-response';
+                    break;
+                case 'event':
+                    entryClass += ' log-event';
+                    break;
+                case 'error':
+                    entryClass += ' log-error';
+                    break;
+                default:
+                    entryClass += ` log-${type}`;
+            }
+            
+            logEntry.className = `${entryClass} ${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            
+            // Only add if it should be shown in current mode
+            logDiv.appendChild(logEntry);
+            
+            // Apply current filter
+            const shouldShow = shouldShowLogEntry(logEntry);
+            logEntry.classList.toggle('hidden', !shouldShow);
+            
+            // Update statistics
+            updateLogStats();
+            
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        function updateStatus(status, message) {
+            statusText.textContent = message;
+            statusIndicator.className = `status-indicator status-${status}`;
+        }
+
+        async function testConnection() {
+            if (currentViewMode === 'responses' || currentViewMode === 'errors') {
+                log('Connection test skipped - current mode only shows passive data', 'info');
+                return;
+            }
+            
+            log('Testing connection to port 3001...', 'info', 'request');
+            updateStatus('testing', 'Testing connection...');
+            
+            try {
+                const response = await fetch(`${TARGET_URL}/api/events/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Origin': 'http://localhost:3000'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log('✅ Connection successful!', 'success', 'response');
+                    log(`Health check response: ${JSON.stringify(data)}`, 'info', 'response');
+                    updateStatus('online', 'Connected to port 3001');
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+            } catch (error) {
+                log(`❌ Connection failed: ${error.message}`, 'error', 'error');
+                updateStatus('offline', 'Cannot connect to port 3001');
+            }
+        }
+
+        async function sendEvent(eventName, data = {}) {
+            // Skip if we're in response/error only mode
+            if (currentViewMode === 'responses' || currentViewMode === 'errors') {
+                log('Event sending skipped - current mode only shows passive data', 'info');
+                return null;
+            }
+            
+            const payload = {
+                userId: 'test-user-' + Math.random().toString(36).substr(2, 9),
+                sessionId: 'sess-' + Math.random().toString(36).substr(2, 9),
+                timestamp: new Date().toISOString(),
+                metadata: {
+                    url: 'http://localhost:3000/',
+                    userAgent: navigator.userAgent,
+                    referrer: document.referrer || 'direct',
+                    ...data
+                }
+            };
+
+            log(`Sending event: ${eventName}`, 'info', 'request');
+            log(`Payload: ${JSON.stringify(payload, null, 2)}`, 'info', 'request');
+            
+            try {
+                const response = await fetch(`${TARGET_URL}/api/events/track/${eventName}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Origin': 'http://localhost:3000'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    log(`✅ Event '${eventName}' tracked successfully!`, 'success', 'event');
+                    log(`Response: ${JSON.stringify(result, null, 2)}`, 'info', 'response');
+                    return result;
+                } else {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+            } catch (error) {
+                log(`❌ Failed to track '${eventName}': ${error.message}`, 'error', 'error');
+                return null;
+            }
+        }
+
+        async function trackUserVisit() {
+            await sendEvent('user-visit-homepage', {
+                page: 'homepage',
+                section: 'main'
+            });
+        }
+
+        async function trackButtonClick() {
+            await sendEvent('button-click', {
+                buttonId: 'test-button',
+                action: 'track-click'
+            });
+        }
+
+        async function trackFormSubmit() {
+            await sendEvent('form-submit', {
+                formId: 'contact-form',
+                fields: ['name', 'email', 'message']
+            });
+        }
+
+        async function sendBatchEvents() {
+            if (currentViewMode === 'responses' || currentViewMode === 'errors') {
+                log('Batch events skipped - current mode only shows passive data', 'info');
+                return;
+            }
+            
+            const events = [
+                {
+                    eventName: 'page-view',
+                    userId: 'batch-user-1',
+                    sessionId: 'batch-session',
+                    timestamp: new Date().toISOString(),
+                    metadata: { page: 'home' }
+                },
+                {
+                    eventName: 'click',
+                    userId: 'batch-user-1',
+                    sessionId: 'batch-session',
+                    timestamp: new Date().toISOString(),
+                    metadata: { element: 'nav-menu' }
+                },
+                {
+                    eventName: 'scroll',
+                    userId: 'batch-user-1',
+                    sessionId: 'batch-session',
+                    timestamp: new Date().toISOString(),
+                    metadata: { position: 500 }
+                }
+            ];
+
+            log('Sending batch events...', 'info', 'request');
+            log(`Batch payload: ${JSON.stringify({ events }, null, 2)}`, 'info', 'request');
+            
+            try {
+                const response = await fetch(`${TARGET_URL}/api/events/track/batch`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Origin': 'http://localhost:3000'
+                    },
+                    body: JSON.stringify({ events })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    log(`✅ Batch events sent successfully!`, 'success', 'event');
+                    log(`Response: ${JSON.stringify(result, null, 2)}`, 'info', 'response');
+                } else {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+            } catch (error) {
+                log(`❌ Failed to send batch events: ${error.message}`, 'error', 'error');
+            }
+        }
+
+        async function testCustomHeaders() {
+            await sendEvent('custom-headers-test', {
+                testType: 'custom-headers'
+            });
+        }
+
+        async function testLargePayload() {
+            const largeData = {
+                description: 'x'.repeat(1000),
+                items: Array.from({length: 50}, (_, i) => ({ id: i, value: `item-${i}` }))
+            };
+            
+            await sendEvent('large-payload-test', largeData);
+        }
+
+        async function trackUserVisit() {
+            await sendEvent('user-visit-homepage', {
+                page: 'homepage',
+                section: 'main'
+            });
+        }
+
+        async function trackButtonClick() {
+            await sendEvent('button-click', {
+                buttonId: 'test-button',
+                action: 'track-click'
+            });
+        }
+
+        async function trackFormSubmit() {
+            await sendEvent('form-submit', {
+                formId: 'contact-form',
+                fields: ['name', 'email', 'message']
+            });
+        }
+
+        async function testErrorHandling() {
+            if (currentViewMode === 'responses' && currentViewMode !== 'all') {
+                log('Error handling test skipped - not in appropriate mode', 'info');
+                return;
+            }
+            
+            log('Testing error handling with invalid data...', 'info', 'request');
+            
+            try {
+                const response = await fetch(`${TARGET_URL}/api/events/track/test-error`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Origin': 'http://localhost:3000'
+                    },
+                    body: JSON.stringify({ invalid: 'data' })
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    log(`Error handling test response: ${JSON.stringify(result, null, 2)}`, 'info', 'response');
+                } else {
+                    log(`Expected error response: ${JSON.stringify(result, null, 2)}`, 'info', 'error');
+                }
+            } catch (error) {
+                log(`❌ Error handling test failed: ${error.message}`, 'error', 'error');
+            }
+        }
+
+        async function stressTest() {
+            if (currentViewMode === 'responses' || currentViewMode === 'errors') {
+                log('Stress test skipped - current mode only shows passive data', 'info');
+                return;
+            }
+            
+            log('Starting stress test with 10 concurrent events...', 'info', 'request');
+            
+            const promises = Array.from({length: 10}, (_, i) => 
+                sendEvent(`stress-test-${i}`, {
+                    index: i,
+                    timestamp: Date.now()
+                })
+            );
+
+            try {
+                const results = await Promise.all(promises);
+                const successful = results.filter(r => r !== null).length;
+                log(`✅ Stress test completed: ${successful}/10 events successful`, 'success', 'event');
+            } catch (error) {
+                log(`❌ Stress test failed: ${error.message}`, 'error', 'error');
+            }
+        }
+
+        function clearLog() {
+            logDiv.innerHTML = '';
+            updateLogStats();
+        }
+
+        // Auto-test connection on page load and initialize mode
+        window.addEventListener('load', () => {
+            changeViewMode('all'); // Initialize mode
+            setTimeout(testConnection, 1000);
+        });
+    </script>
+</body>
+</html>
