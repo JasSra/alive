@@ -40,7 +40,7 @@ const ChartRenderer = memo(function ChartRenderer({ config, range, onMaximize }:
           setData(counts);
           setRangeData(null);
         } else if (config.api.kind === "range") {
-          const rows = (await getRangeEvents({ from, to, userScope: config.api.userScope, limit: 5000 })) as RangeEvt[];
+          const rows = (await getRangeEvents({ from, to, userScope: config.api.userScope, limit: 100 })) as RangeEvt[];
           setRangeData(rows);
           setData(null);
         }

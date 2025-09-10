@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getTotalCount } from "@/lib/store";
+import { ingestStore } from "@/lib/ingestStore";
 
 // Lightweight server metrics: memory usage and uptime
 // Same-origin calls from the dashboard; permissive CORS for flexibility
@@ -18,9 +18,13 @@ export async function GET() {
   try {
     const mem = process.memoryUsage();
     const toMB = (b: number) => Math.round((b / (1024 * 1024)) * 10) / 10;
-    const from = new Date(Date.now() - 5 * 60 * 1000);
-    const to = new Date();
-    const eventsLast5m = getTotalCount(from, to);
+    const now = Date.now();
+    const snap = ingestStore.snapshot();
+    const cutoff = now - 5 * 60 * 1000;
+    const eventsLast5m =
+      snap.logs.filter((l) => l.t >= cutoff).length +
+      snap.requests.filter((r) => r.t >= cutoff).length +
+      snap.events.filter((e) => e.t >= cutoff).length;
     const body = {
       memory: {
         rss: mem.rss,

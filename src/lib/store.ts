@@ -26,6 +26,7 @@ const globalStore = globalThis as unknown as {
     events: StoredEvent[];
     sseClients: Set<SSESend>;
     wsClients: Set<unknown>;
+  buckets: Map<number, MinuteBucket>; // key: minute start epoch ms
   };
 };
 
@@ -34,10 +35,147 @@ if (!globalStore.__eventStore) {
     events: [],
     sseClients: new Set(),
     wsClients: new Set(),
+    buckets: new Map(),
   };
 }
 
-const { events, sseClients, wsClients } = globalStore.__eventStore;
+const { events, sseClients, wsClients, buckets } = globalStore.__eventStore;
+
+// --------------------
+// Aggregation Buckets
+// --------------------
+export type MinuteBucket = {
+  startMs: number; // minute floor
+  reqCount: number;
+  respCount: number;
+  statusCounts: Map<number, number>; // e.g., 200 -> 12
+  pathCounts: Map<string, number>; // e.g., /api/events/track/:event -> 7
+  // Welford stats for response latency (ms)
+  latency: { count: number; mean: number; M2: number; min: number; max: number; sum: number };
+};
+
+function minuteFloor(ts: number) { return ts - (ts % 60000); }
+
+function getOrCreateBucket(ms: number): MinuteBucket {
+  const key = minuteFloor(ms);
+  let b = buckets.get(key);
+  if (!b) {
+    b = {
+      startMs: key,
+      reqCount: 0,
+      respCount: 0,
+      statusCounts: new Map(),
+      pathCounts: new Map(),
+      latency: { count: 0, mean: 0, M2: 0, min: Number.POSITIVE_INFINITY, max: 0, sum: 0 },
+    };
+    buckets.set(key, b);
+  }
+  return b;
+}
+
+function welfordAdd(b: MinuteBucket, x: number) {
+  const s = b.latency;
+  s.count += 1;
+  const delta = x - s.mean;
+  s.mean += delta / s.count;
+  const delta2 = x - s.mean;
+  s.M2 += delta * delta2;
+  s.min = Math.min(s.min, x);
+  s.max = Math.max(s.max, x);
+  s.sum += x;
+}
+
+function inc<K>(map: Map<K, number>, key: K, by = 1) { map.set(key, (map.get(key) ?? 0) + by); }
+
+function updateBucketsForEvent(e: StoredEvent) {
+  const b = getOrCreateBucket(e.timestamp);
+  const status = typeof e.payload?.statusCode === 'number' ? (e.payload.statusCode as number) : undefined;
+  const isRequest = status === 0;
+  const isResponse = typeof status === 'number' && status > 0;
+  const path = (e.payload?.metadata as Record<string, unknown> | undefined)?.requestPath as string | undefined;
+  if (isRequest) b.reqCount += 1;
+  if (isResponse) {
+    b.respCount += 1;
+    inc(b.statusCounts, status!, 1);
+    const rt = e.payload?.responseTimeMs as number | undefined;
+    if (typeof rt === 'number' && rt >= 0) welfordAdd(b, rt);
+  }
+  if (path) inc(b.pathCounts, path, 1);
+}
+
+export type AggregatedPoint = {
+  t: string; // ISO of window start
+  reqCount: number;
+  respCount: number;
+  statusCounts: Record<string, number>;
+  pathCounts: Record<string, number>;
+  latency: { count: number; avg?: number; stdDev?: number; min?: number; max?: number; sum?: number };
+};
+
+function mergeStats(dst: { count: number; mean: number; M2: number; min: number; max: number; sum: number }, src: { count: number; mean: number; M2: number; min: number; max: number; sum: number }) {
+  if (src.count === 0) return;
+  if (dst.count === 0) {
+    Object.assign(dst, src);
+    return;
+  }
+  const n1 = dst.count, n2 = src.count;
+  const delta = src.mean - dst.mean;
+  dst.count = n1 + n2;
+  dst.mean = dst.mean + delta * (n2 / dst.count);
+  dst.M2 = dst.M2 + src.M2 + (delta * delta) * n1 * n2 / dst.count;
+  dst.min = Math.min(dst.min, src.min);
+  dst.max = Math.max(dst.max, src.max);
+  dst.sum += src.sum;
+}
+
+export function getTimeBuckets(from: Date, to: Date, stepMinutes = 5, topNPaths = 10): AggregatedPoint[] {
+  const start = minuteFloor(from.getTime());
+  const end = minuteFloor(to.getTime());
+  const stepMs = Math.max(1, stepMinutes) * 60000;
+  const results: AggregatedPoint[] = [];
+  for (let w = start; w <= end; w += stepMs) {
+    const wEnd = Math.min(end, w + stepMs - 60000); // last minute in window
+    let reqCount = 0;
+    let respCount = 0;
+    const status = new Map<number, number>();
+    const paths = new Map<string, number>();
+    const stats = { count: 0, mean: 0, M2: 0, min: Number.POSITIVE_INFINITY, max: 0, sum: 0 };
+    for (let m = w; m <= wEnd; m += 60000) {
+      const b = buckets.get(m);
+      if (!b) continue;
+      reqCount += b.reqCount;
+      respCount += b.respCount;
+      for (const [k, v] of b.statusCounts) inc(status, k, v);
+      for (const [k, v] of b.pathCounts) inc(paths, k, v);
+      mergeStats(stats, b.latency);
+    }
+    // Top N paths
+    const topPaths = [...paths.entries()].sort((a, b) => b[1] - a[1]).slice(0, topNPaths);
+    const statusObj: Record<string, number> = {};
+    for (const [k, v] of status) statusObj[String(k)] = v;
+    const pathObj: Record<string, number> = {};
+    for (const [k, v] of topPaths) pathObj[k] = v;
+    const variance = stats.count > 1 ? stats.M2 / (stats.count - 1) : 0;
+    const stdDev = stats.count > 1 ? Math.sqrt(variance) : undefined;
+    const avg = stats.count > 0 ? stats.sum / stats.count : undefined;
+    results.push({
+      t: new Date(w).toISOString(),
+      reqCount,
+      respCount,
+      statusCounts: statusObj,
+      pathCounts: pathObj,
+      latency: {
+        count: stats.count,
+        avg,
+        stdDev,
+        min: stats.count ? stats.min : undefined,
+        max: stats.count ? stats.max : undefined,
+        sum: stats.count ? stats.sum : undefined,
+      },
+    });
+  }
+  return results;
+}
 
 type SSESend = (chunk: string) => void;
 
@@ -97,6 +235,95 @@ export function registerWSClient(ws: WSLike) {
   return close;
 }
 
+// --- Unified-ingest publishing adapter ---
+// Allows unifiedIngest to surface request/response/log events into the existing
+// live SSE/WS stream and aggregation buckets without depending on legacy storage.
+export function publishUnifiedEvent(evt: {
+  id?: string;
+  name: string;
+  timestamp?: number; // epoch ms
+  payload?: Record<string, unknown>;
+}) {
+  const id = evt.id ?? uuid();
+  const timestamp = evt.timestamp ?? Date.now();
+  const stored: StoredEvent = {
+    id,
+    name: evt.name,
+    userId: null,
+    payload: (evt.payload ?? {}) as AIEventPayload,
+    timestamp,
+  };
+  try {
+    // feed into analytics buckets used by /api/events/* endpoints
+    updateBucketsForEvent(stored);
+  } catch {}
+  try {
+    // Live stream for SSE/WS clients
+    broadcast({ type: "event", data: stored });
+  } catch {}
+  return id;
+}
+
+export function publishUnifiedRequest(req: {
+  t: number;
+  service?: string;
+  method?: string;
+  path?: string;
+  status?: number;
+  duration_ms?: number;
+  attrs?: Record<string, unknown>;
+}) {
+  // Derive a correlation id if provided by attributes
+  const corr = (req.attrs?.["correlationId"] as string | undefined)
+    || (req.attrs?.["http.request_id"] as string | undefined)
+    || (req.attrs?.["traceId"] as string | undefined);
+  const payloadBase: Record<string, unknown> = {
+    correlationId: corr,
+    statusCode: req.status ?? undefined,
+    responseTimeMs: req.duration_ms ?? undefined,
+    serviceName: req.service ?? undefined,
+    metadata: {
+      method: req.method,
+      path: req.path,
+      url: req.path,
+      requestPath: req.path,
+    },
+  };
+  // Emit a request-start synthetic event when we have duration
+  if (typeof req.duration_ms === "number" && req.duration_ms >= 0) {
+    publishUnifiedEvent({
+      name: "request",
+      timestamp: Math.max(0, req.t - req.duration_ms),
+      payload: { ...payloadBase, statusCode: 0 },
+    });
+  }
+  // Emit the response event
+  publishUnifiedEvent({
+    name: "response",
+    timestamp: req.t,
+    payload: payloadBase,
+  });
+}
+
+export function publishUnifiedLog(log: {
+  t: number;
+  service?: string;
+  severity?: number | string;
+  message: string;
+  attrs?: Record<string, unknown>;
+}) {
+  publishUnifiedEvent({
+    name: "log",
+    timestamp: log.t,
+    payload: {
+      serviceName: log.service,
+      severity: log.severity,
+      message: log.message,
+      metadata: log.attrs,
+    },
+  });
+}
+
 export function trackEvent(
   eventName: string,
   payload: AIEventPayload = {},
@@ -112,6 +339,7 @@ export function trackEvent(
     timestamp,
   };
   events.push(stored);
+  try { updateBucketsForEvent(stored); } catch {}
   // naive suggestions placeholder
   const suggestions: AISuggestion[] = [
     {
@@ -293,9 +521,12 @@ export function getEventsRange(
       name: e.name,
       timestamp: new Date(e.timestamp).toISOString(),
       userId: e.userId ?? undefined,
+  serviceName: (e.payload?.serviceName as string | undefined) ?? undefined,
       correlationId: e.payload.correlationId,
       statusCode: e.payload.statusCode as number | undefined,
       responseTimeMs: e.payload.responseTimeMs as number | undefined,
+  requestPath: (e.payload?.metadata as Record<string, unknown> | undefined)?.requestPath as string | undefined,
+  referrer: e.payload?.referrer,
     }));
   return result;
 }
@@ -322,6 +553,10 @@ export function cleanupOldData(retentionDays: number) {
   }
   const removed = before - events.length;
   broadcast({ type: "stats", data: { removed } });
+  // prune buckets older than cutoff
+  for (const key of buckets.keys()) {
+    if (key < cutoff) buckets.delete(key);
+  }
   return removed;
 }
 

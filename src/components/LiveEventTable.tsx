@@ -3,7 +3,8 @@ import type { AIEventPayload } from "@/lib/types";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faServer, faArrowRight, faUser, faBox, faCompass } from "@fortawesome/free-solid-svg-icons";
 
-import type { LiveEvt } from "../app/page";
+type LiveSSEData = { type?: string; data?: { name?: string; payload?: AIEventPayload } | Record<string, unknown> };
+export type LiveEvt = { id?: string; t?: number; data?: LiveSSEData };
 
 interface LiveEventTableProps {
   events: LiveEvt[];

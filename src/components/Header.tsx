@@ -77,6 +77,11 @@ const Header = memo(function Header() {
           Alive
         </Link>
         <nav className="flex items-center gap-4 text-sm" aria-label="Utility">
+          {/* Quick nav */}
+          <Link href="/logs" className="hover:underline">Logs</Link>
+          <Link href="/requests" className="hover:underline">Requests</Link>
+          <Link href="/responses" className="hover:underline">Responses</Link>
+          <Link href="/events" className="hover:underline">Live Events</Link>
           {/* Theme toggle */}
           <button
             onClick={toggleTheme}

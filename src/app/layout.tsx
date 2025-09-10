@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import "./fa.config";
-import MiniMetrics from "@/components/MiniMetrics";
+import Navigation from "@/components/Navigation";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,10 +27,12 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full bg-background text-foreground`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full bg-gradient-to-br from-slate-900 via-gray-900 to-slate-800 text-white`}
       >
-        {children}
-  <MiniMetrics />
+        <Navigation />
+        <main className="min-h-screen">
+          {children}
+        </main>
       </body>
     </html>
   );

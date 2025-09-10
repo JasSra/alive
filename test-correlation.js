@@ -3,7 +3,7 @@
  * Test correlation ID matching with the user's specific format
  */
 
-const baseUrl = 'http://localhost:3000';
+const baseUrl = 'http://localhost:3002';
 const correlationId = 'corr-1756278124529-a52ah90df';
 
 async function postEvent(eventName, payload) {

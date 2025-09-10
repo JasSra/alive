@@ -8,7 +8,7 @@ export interface LiveEvent<T = unknown> {
   data: T;
 }
 
-export function useEventStream<T = unknown>(max = 500) {
+export function useEventStream<T = unknown>(max = 100) {
   const [events, setEvents] = useState<LiveEvent<T>[]>([]);
   const disposeRef = useRef<(() => void) | null>(null);
 

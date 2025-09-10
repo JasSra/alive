@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   if (!from || !to) {
     return NextResponse.json(
       { success: false, message: "from and to are required" },
-      { status: 400 },
+      { status: 400, headers: { "Vary": "Origin" } },
     );
   }
   const fromDate = new Date(from);
@@ -17,10 +17,10 @@ export async function GET(req: NextRequest) {
   if (Number.isNaN(+fromDate) || Number.isNaN(+toDate) || toDate <= fromDate) {
     return NextResponse.json(
       { success: false, message: "Invalid date range" },
-      { status: 400 },
+      { status: 400, headers: { "Vary": "Origin" } },
     );
   }
   const userId = userScope === "current" ? req.headers.get("x-user-id") ?? undefined : undefined;
   const stats = getStatistics(fromDate, toDate, userId);
-  return NextResponse.json(stats);
+  return NextResponse.json(stats, { headers: { "Vary": "Origin" } });
 }

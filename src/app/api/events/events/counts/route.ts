@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   if (!from || !to) {
     return NextResponse.json(
       { success: false, message: "from and to are required" },
-      { status: 400 },
+      { status: 400, headers: { "Vary": "Origin" } },
     );
   }
   const fromDate = new Date(from);
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   if (Number.isNaN(+fromDate) || Number.isNaN(+toDate) || toDate <= fromDate) {
     return NextResponse.json(
       { success: false, message: "Invalid date range" },
-      { status: 400 },
+      { status: 400, headers: { "Vary": "Origin" } },
     );
   }
   const userId = userScope === "current" ? req.headers.get("x-user-id") ?? undefined : undefined;
@@ -27,5 +27,5 @@ export async function GET(req: NextRequest) {
   const total = counts.reduce((acc, c) => acc + c.count, 0);
   const withPct = counts.map((c) => ({ ...c, percentage: total ? (c.count / total) * 100 : 0 }));
   const ordered = (orderBy === "least" ? withPct.sort((a, b) => a.count - b.count) : withPct.sort((a, b) => b.count - a.count)).slice(0, limit);
-  return NextResponse.json(ordered);
+  return NextResponse.json(ordered, { headers: { "Vary": "Origin" } });
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEventStore, type ProcessedEvent } from "../../eventStore";
+import { ingestStore } from "@/lib/ingestStore";
 
 // Enhanced CORS headers for cross-origin requests
 const corsHeaders = {
@@ -24,40 +24,56 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const from = url.searchParams.get('from');
     const to = url.searchParams.get('to');
-    
-    const eventStore = getEventStore();
-    let filteredEvents = [...eventStore];
+    const f = from ? new Date(from).getTime() : -Infinity;
+    const t = to ? new Date(to).getTime() : Infinity;
 
-    // Filter by time range
-    if (from) {
-      const fromTime = new Date(from).getTime();
-      filteredEvents = filteredEvents.filter(event => 
-        new Date(event.timestamp).getTime() >= fromTime
-      );
+    // Build a normalized view over unified rings for the requested range
+    type Row = {
+      timestamp: number;
+      serviceName: string;
+      name: string;
+      statusCode?: number;
+      responseTimeMs?: number;
+    };
+    const snap = ingestStore.snapshot();
+    const rows: Row[] = [];
+    for (const r of snap.requests) {
+      if (r.t < f || r.t > t) continue;
+      rows.push({
+        timestamp: r.t,
+        serviceName: r.service ?? 'unknown',
+        // Use path as the event name for more informative service top events
+        name: (r.path && r.path.length > 0 ? r.path : 'response'),
+        statusCode: r.status,
+        responseTimeMs: r.duration_ms,
+      });
+    }
+    for (const l of snap.logs) {
+      if (l.t < f || l.t > t) continue;
+      rows.push({
+        timestamp: l.t,
+        serviceName: l.service ?? 'unknown',
+        name: 'log',
+      });
+    }
+    for (const e of snap.events) {
+      if (e.t < f || e.t > t) continue;
+      rows.push({
+        timestamp: e.t,
+        serviceName: e.service ?? 'unknown',
+        name: e.name || 'event',
+      });
     }
 
-    if (to) {
-      const toTime = new Date(to).getTime();
-      filteredEvents = filteredEvents.filter(event => 
-        new Date(event.timestamp).getTime() <= toTime
-      );
+    // Group rows by service
+    const serviceGroups = new Map<string, Row[]>();
+    const unknownServiceEvents: Row[] = [];
+    for (const row of rows) {
+      const svc = row.serviceName || 'unknown';
+      if (svc === 'unknown') unknownServiceEvents.push(row);
+      if (!serviceGroups.has(svc)) serviceGroups.set(svc, []);
+      serviceGroups.get(svc)!.push(row);
     }
-
-    // Group events by service
-    const serviceGroups = new Map<string, ProcessedEvent[]>();
-    const unknownServiceEvents: ProcessedEvent[] = [];
-
-    filteredEvents.forEach(event => {
-      const serviceName = event.serviceName || 'unknown';
-      if (serviceName === 'unknown') {
-        unknownServiceEvents.push(event);
-      } else {
-        if (!serviceGroups.has(serviceName)) {
-          serviceGroups.set(serviceName, []);
-        }
-        serviceGroups.get(serviceName)!.push(event);
-      }
-    });
 
     // Calculate statistics for each service
     const serviceStats = Array.from(serviceGroups.entries()).map(([serviceName, events]) => {
@@ -77,7 +93,7 @@ export async function GET(request: NextRequest) {
       const errorRate = events.length > 0 ? (errorEvents.length / events.length) * 100 : 0;
 
       // Get last seen timestamp
-      const lastSeen = new Date(Math.max(...events.map(e => new Date(e.timestamp).getTime()))).toISOString();
+      const lastSeen = new Date(Math.max(...events.map(e => e.timestamp))).toISOString();
 
       // Calculate top events for this service
       const eventCounts = new Map<string, number>();
@@ -121,7 +137,7 @@ export async function GET(request: NextRequest) {
       
       const errorEvents = unknownServiceEvents.filter(e => e.statusCode && e.statusCode >= 400);
       const errorRate = (errorEvents.length / unknownServiceEvents.length) * 100;
-      const lastSeen = new Date(Math.max(...unknownServiceEvents.map(e => new Date(e.timestamp).getTime()))).toISOString();
+      const lastSeen = new Date(Math.max(...unknownServiceEvents.map(e => e.timestamp))).toISOString();
 
       const eventCounts = new Map<string, number>();
       unknownServiceEvents.forEach(event => {
@@ -153,7 +169,7 @@ export async function GET(request: NextRequest) {
       {
         services: serviceStats,
         totalServices: serviceStats.length,
-        totalEvents: filteredEvents.length,
+  totalEvents: rows.length,
         timeRange: {
           from: from || 'all time',
           to: to || 'now'

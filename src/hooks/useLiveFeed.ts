@@ -6,7 +6,7 @@ export type Transport = "sse" | "ws";
 
 export interface LiveFeedEvent<T = unknown> { id: string; t: number; data: T }
 
-export function useLiveFeed<T = unknown>(enabled: boolean, transport: Transport = "sse", max = 500) {
+export function useLiveFeed<T = unknown>(enabled: boolean, transport: Transport = "sse", max = 100) {
   const [events, setEvents] = useState<LiveFeedEvent<T>[]>([]);
   const [status, setStatus] = useState<"idle" | "connecting" | "open" | "error">("idle");
   const disposeRef = useRef<(() => void) | null>(null);

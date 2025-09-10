@@ -21,6 +21,9 @@ export type RangeEvt = {
   correlationId?: string;
   statusCode?: number;
   responseTimeMs?: number;
+  userId?: string;
+  serviceName?: string;
+  requestPath?: string;
 };
 
 export type CorrelatedItem = {
@@ -32,6 +35,9 @@ export type CorrelatedItem = {
   statusCode?: number;
   latencyMs?: number;
   pending: boolean;
+  userId?: string;
+  serviceName?: string;
+  requestPath?: string;
 };
 
 function asStoredFromLive(live: unknown): LiveStoredEvent | null {
@@ -45,7 +51,17 @@ export function useCorrelation(liveEvents: Array<{ data?: unknown; t?: number }>
   return useMemo<CorrelatedItem[]>(() => {
     const map = new Map<string, CorrelatedItem>();
 
-    const add = (idKey: string, name: string, corr?: string, t?: number, statusCode?: number, responseTimeMs?: number) => {
+    const add = (
+      idKey: string,
+      name: string,
+      corr?: string,
+      t?: number,
+      statusCode?: number,
+      responseTimeMs?: number,
+      userId?: string,
+      serviceName?: string,
+      requestPath?: string,
+    ) => {
       const key = corr || idKey;
       const existing = map.get(key);
       const isResponse = typeof statusCode === "number" && statusCode > 0 || typeof responseTimeMs === "number";
@@ -55,6 +71,9 @@ export function useCorrelation(liveEvents: Array<{ data?: unknown; t?: number }>
         correlationId: corr,
         name,
         pending: true,
+        userId,
+        serviceName,
+        requestPath,
       };
       if (isRequest) {
         next.requestAt = t ?? next.requestAt;
@@ -69,7 +88,11 @@ export function useCorrelation(liveEvents: Array<{ data?: unknown; t?: number }>
         next.latencyMs = Math.max(0, next.responseAt - next.requestAt);
       }
       next.pending = !(next.requestAt && next.responseAt);
-      map.set(key, next);
+  // Enrich context fields if provided and missing
+  if (userId && !next.userId) next.userId = userId;
+  if (serviceName && !next.serviceName) next.serviceName = serviceName;
+  if (requestPath && !next.requestPath) next.requestPath = requestPath;
+  map.set(key, next);
     };
 
     if (useLive) {
@@ -78,12 +101,32 @@ export function useCorrelation(liveEvents: Array<{ data?: unknown; t?: number }>
         if (!s) continue;
         const corr = s.payload?.correlationId;
         const t = s.timestamp ?? e.t ?? Date.now();
-        add(s.id, s.name, corr, t, s.payload?.statusCode, s.payload?.responseTimeMs);
+        add(
+          s.id,
+          s.name,
+          corr,
+          t,
+          s.payload?.statusCode,
+          s.payload?.responseTimeMs,
+          undefined,
+          undefined,
+          undefined,
+        );
       }
     } else {
       for (const r of rangeEvents) {
         const t = Date.parse(r.timestamp);
-        add(r.id, r.name, r.correlationId, t, r.statusCode, r.responseTimeMs);
+        add(
+          r.id,
+          r.name,
+          r.correlationId,
+          t,
+          r.statusCode,
+          r.responseTimeMs,
+          r.userId,
+          r.serviceName,
+          r.requestPath,
+        );
       }
     }
 

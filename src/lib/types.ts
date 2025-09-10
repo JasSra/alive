@@ -109,6 +109,9 @@ export interface EventItemDTO {
   correlationId?: string;
   statusCode?: number;
   responseTimeMs?: number;
+  // Optional request context for filtering/display
+  requestPath?: string; // server route path that handled event
+  referrer?: string; // original page URL if provided
 }
 
 // JSON-driven chart config
