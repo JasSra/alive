@@ -336,6 +336,10 @@ export default function RequestsPage() {
   const [selectedRequest, setSelectedRequest] = useState<IngestRequest | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   
+  // Clear data state
+  const [isClearing, setIsClearing] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  
   // Chart modal state
   const [chartModal, setChartModal] = useState<{
     isOpen: boolean;
@@ -384,6 +388,41 @@ export default function RequestsPage() {
       setLoading(false);
     }
   }, [limit, timeRange]);
+
+  // Clear all data function
+  const clearAllData = useCallback(async () => {
+    try {
+      setIsClearing(true);
+      const response = await fetch('/api/events/clear', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to clear data');
+      }
+
+      const result = await response.json();
+      console.log(`Cleared ${result.removed} items from server`);
+      
+      // Reset local state
+      setRequests([]);
+      setAnalytics(null);
+      setSelectedRequest(null);
+      setIsPanelOpen(false);
+      setShowClearConfirm(false);
+      
+      // Refresh data to confirm
+      await fetchData();
+    } catch (err) {
+      console.error("Failed to clear data:", err);
+      setError(err instanceof Error ? err.message : "Failed to clear data");
+    } finally {
+      setIsClearing(false);
+    }
+  }, [fetchData]);
 
   useEffect(() => {
     fetchData();
@@ -633,7 +672,7 @@ export default function RequestsPage() {
               {/* Refresh Button */}
               <button
                 onClick={fetchData}
-                disabled={loading}
+                disabled={loading || isClearing}
                 className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:from-blue-500/50 disabled:to-blue-600/50 disabled:cursor-not-allowed px-4 py-3 rounded-lg font-medium transition-all duration-200 flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl"
               >
                 {loading ? (
@@ -648,6 +687,49 @@ export default function RequestsPage() {
                   </>
                 )}
               </button>
+
+              {/* Clear All Data Button */}
+              {!showClearConfirm ? (
+                <button
+                  onClick={() => setShowClearConfirm(true)}
+                  disabled={loading || isClearing}
+                  className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 disabled:from-red-500/50 disabled:to-red-600/50 disabled:cursor-not-allowed px-4 py-3 rounded-lg font-medium transition-all duration-200 flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl"
+                >
+                  <span>🗑️</span>
+                  <span>Clear All Data</span>
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-orange-300 text-sm font-medium text-center">⚠️ This will delete ALL data!</p>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={clearAllData}
+                      disabled={isClearing}
+                      className="flex-1 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 disabled:from-red-600/50 disabled:to-red-700/50 disabled:cursor-not-allowed px-3 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center space-x-1 text-sm"
+                    >
+                      {isClearing ? (
+                        <>
+                          <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          <span>Clearing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>✓</span>
+                          <span>Confirm</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setShowClearConfirm(false)}
+                      disabled={isClearing}
+                      className="flex-1 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-600/50 disabled:cursor-not-allowed px-3 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center space-x-1 text-sm"
+                    >
+                      <span>✕</span>
+                      <span>Cancel</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

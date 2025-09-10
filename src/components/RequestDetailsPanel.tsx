@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import JsonViewer from "./JsonViewer";
 
 interface RequestData {
@@ -10,9 +10,18 @@ interface RequestData {
   duration_ms?: number;
   service?: string;
   correlationId?: string;
+  headers?: Record<string, unknown>;
+  body?: unknown;
+  response?: {
+    headers?: Record<string, unknown>;
+    body?: unknown;
+    [key: string]: unknown;
+  };
   attrs?: {
     clientIp?: string;
     ip?: string;
+    headers?: Record<string, unknown>;
+    body?: unknown;
     [key: string]: unknown;
   };
   [key: string]: unknown;
@@ -31,6 +40,13 @@ interface TabButtonProps {
   children: React.ReactNode;
 }
 
+interface HeaderRow {
+  key: string;
+  type: string;
+  value: string;
+  truncated?: boolean;
+}
+
 function TabButton({ active, onClick, children }: TabButtonProps) {
   return (
     <button
@@ -43,6 +59,193 @@ function TabButton({ active, onClick, children }: TabButtonProps) {
     >
       {children}
     </button>
+  );
+}
+
+// Copy to clipboard function
+function copyToClipboard(text: string, label: string) {
+  navigator.clipboard.writeText(text).then(() => {
+    // You could add a toast notification here
+    console.log(`Copied ${label}: ${text}`);
+  }).catch(err => {
+    console.error('Failed to copy:', err);
+  });
+}
+
+// Enhanced Headers Table Component
+function HeadersTable({ headers, title }: { headers: Record<string, unknown>, title: string }) {
+  const [sortField, setSortField] = useState<'key' | 'type' | 'value'>('key');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const headerRows: HeaderRow[] = useMemo(() => {
+    return Object.entries(headers).map(([key, value]) => {
+      const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+      const type = typeof value;
+      const truncated = stringValue.length > 50;
+      
+      return {
+        key,
+        type,
+        value: stringValue,
+        truncated
+      };
+    });
+  }, [headers]);
+
+  const sortedHeaders = useMemo(() => {
+    return [...headerRows].sort((a, b) => {
+      let aValue = a[sortField];
+      let bValue = b[sortField];
+      
+      if (sortDirection === 'desc') {
+        [aValue, bValue] = [bValue, aValue];
+      }
+      
+      return aValue.localeCompare(bValue);
+    });
+  }, [headerRows, sortField, sortDirection]);
+
+  const handleSort = (field: 'key' | 'type' | 'value') => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const toggleExpanded = (key: string) => {
+    const newExpanded = new Set(expandedRows);
+    if (newExpanded.has(key)) {
+      newExpanded.delete(key);
+    } else {
+      newExpanded.add(key);
+    }
+    setExpandedRows(newExpanded);
+  };
+
+  const SortIcon = ({ field }: { field: 'key' | 'type' | 'value' }) => {
+    if (sortField !== field) {
+      return <span className="text-gray-600">↕️</span>;
+    }
+    return <span className="text-blue-400">{sortDirection === 'asc' ? '↑' : '↓'}</span>;
+  };
+
+  return (
+    <div className="bg-white/5 rounded-lg overflow-hidden">
+      <div className="px-4 py-2 bg-white/5 border-b border-white/10">
+        <h3 className="text-sm font-semibold text-white">{title}</h3>
+      </div>
+      
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-white/5">
+            <tr>
+              <th 
+                className="text-left py-2 px-3 font-medium text-gray-300 cursor-pointer hover:bg-white/5 transition-colors"
+                onClick={() => handleSort('key')}
+              >
+                <div className="flex items-center space-x-1">
+                  <span>Key</span>
+                  <SortIcon field="key" />
+                </div>
+              </th>
+              <th 
+                className="text-left py-2 px-3 font-medium text-gray-300 cursor-pointer hover:bg-white/5 transition-colors w-20"
+                onClick={() => handleSort('type')}
+              >
+                <div className="flex items-center space-x-1">
+                  <span>Type</span>
+                  <SortIcon field="type" />
+                </div>
+              </th>
+              <th 
+                className="text-left py-2 px-3 font-medium text-gray-300 cursor-pointer hover:bg-white/5 transition-colors"
+                onClick={() => handleSort('value')}
+              >
+                <div className="flex items-center space-x-1">
+                  <span>Value</span>
+                  <SortIcon field="value" />
+                </div>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedHeaders.map((header) => {
+              const isExpanded = expandedRows.has(header.key);
+              const displayValue = header.truncated && !isExpanded 
+                ? header.value.substring(0, 50) + '...' 
+                : header.value;
+
+              return (
+                <tr key={header.key} className="border-b border-white/5 hover:bg-white/5 group">
+                  <td className="py-2 px-3 font-mono text-blue-300 font-medium relative">
+                    <div className="flex items-center justify-between">
+                      <span>{header.key}</span>
+                      <button
+                        onClick={() => copyToClipboard(header.key, 'key')}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-all"
+                        title="Copy key"
+                      >
+                        📋
+                      </button>
+                    </div>
+                  </td>
+                  <td className="py-2 px-3">
+                    <span className={`px-2 py-0.5 text-xs rounded font-medium ${
+                      header.type === 'string' ? 'bg-green-500/20 text-green-300' :
+                      header.type === 'number' ? 'bg-blue-500/20 text-blue-300' :
+                      header.type === 'boolean' ? 'bg-purple-500/20 text-purple-300' :
+                      'bg-gray-500/20 text-gray-300'
+                    }`}>
+                      {header.type}
+                    </span>
+                  </td>
+                  <td className="py-2 px-3 font-mono text-sm relative">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2 flex-1 min-w-0">
+                        <span 
+                          className={`break-all ${header.truncated ? 'cursor-pointer text-gray-300 hover:text-white' : 'text-gray-200'}`}
+                          onClick={() => header.truncated && toggleExpanded(header.key)}
+                          title={header.truncated ? 'Click to expand/collapse' : ''}
+                        >
+                          {displayValue}
+                        </span>
+                        {header.truncated && (
+                          <button
+                            onClick={() => toggleExpanded(header.key)}
+                            className="text-blue-400 hover:text-blue-300 text-xs flex-shrink-0"
+                          >
+                            {isExpanded ? 'Less' : 'More'}
+                          </button>
+                        )}
+                      </div>
+                      <div className="opacity-0 group-hover:opacity-100 flex items-center space-x-1 transition-all">
+                        <button
+                          onClick={() => copyToClipboard(header.value, 'value')}
+                          className="p-1 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
+                          title="Copy value"
+                        >
+                          📄
+                        </button>
+                        <button
+                          onClick={() => copyToClipboard(`${header.key}: ${header.value}`, 'header')}
+                          className="p-1 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
+                          title="Copy both"
+                        >
+                          📝
+                        </button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -72,210 +275,188 @@ export default function RequestDetailsPanel({
     duration: requestData?.duration_ms,
     service: requestData?.service || "unknown",
     clientIp: requestData?.attrs?.clientIp || requestData?.attrs?.ip || "unknown",
+    correlationId: requestData?.correlationId || "req-" + Math.random().toString(36).substr(2, 9),
   };
 
-  const mockRequestHeaders = {
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "accept": "application/json, text/plain, */*",
-    "accept-language": "en-US,en;q=0.9",
-    "authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "content-type": "application/json",
-    "x-correlation-id": requestData?.correlationId || "req-" + Math.random().toString(36).substr(2, 9),
-  };
-
-  const mockResponseHeaders = {
-    "content-type": "application/json; charset=utf-8",
-    "content-length": "1234",
-    "x-powered-by": "Express",
-    "access-control-allow-origin": "*",
-    "x-response-time": `${requestData?.duration_ms || 150}ms`,
-    "cache-control": "no-cache",
-  };
-
-  const mockRequestBody = requestData?.method === "POST" || requestData?.method === "PUT" ? {
-    userId: "user-123",
-    data: {
-      name: "John Doe",
-      email: "john.doe@example.com",
-      preferences: {
-        theme: "dark",
-        notifications: true,
-        timezone: "UTC"
-      }
-    },
-    metadata: {
-      source: "web-app",
-      version: "1.2.3"
-    }
-  } : null;
-
-  const mockResponseBody = {
-    success: requestData?.status ? requestData.status < 400 : true,
-    status: requestData?.status || 200,
-    data: requestData?.status && requestData.status >= 400 ? null : {
-      id: "res-" + Math.random().toString(36).substr(2, 9),
-      timestamp: new Date().toISOString(),
-      result: "Operation completed successfully",
-      items: [
-        { id: 1, name: "Item 1", active: true },
-        { id: 2, name: "Item 2", active: false },
-      ]
-    },
-    error: requestData?.status && requestData.status >= 400 ? {
-      code: `ERR_${requestData.status}`,
-      message: requestData.status === 500 ? "Internal server error" : "Request failed",
-      details: "Additional error details would be here"
-    } : null,
-    meta: {
-      requestId: requestData?.correlationId || "req-" + Math.random().toString(36).substr(2, 9),
-      processingTime: requestData?.duration_ms || 150,
-      serverTime: new Date().toISOString()
-    }
-  };
+  // Extract headers from request data
+  const requestHeaders = requestData?.headers || requestData?.attrs?.headers || {};
+  const responseHeaders = requestData?.response?.headers || {};
+  
+  // Extract body data from request
+  const requestBody = requestData?.body || requestData?.attrs?.body || null;
+  const responseBody = requestData?.response?.body || requestData?.response || null;
 
   return (
-    <div className={`fixed inset-y-0 right-0 w-1/2 bg-gray-800 border-l border-white/10 shadow-2xl z-50 transform transition-transform duration-300 ${className}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-white/10 bg-gray-900/50">
-        <div className="flex items-center space-x-3">
+    <>
+      {/* Backdrop */}
+      <div 
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 transition-opacity duration-300"
+        onClick={onClose}
+      />
+      
+      {/* Panel */}
+      <div className={`fixed inset-y-0 right-0 w-1/2 bg-gradient-to-br from-gray-800 to-gray-900 border-l border-white/10 shadow-2xl z-50 transform transition-transform duration-300 ${className}`}>
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-white/10 bg-gray-900/80 backdrop-blur-sm">
+          <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
+              <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-medium">
+                {requestDetails.method}
+              </span>
+              <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusBadgeColor(requestDetails.status)}`}>
+                {requestDetails.status || "—"}
+              </span>
+            </div>
+            <h2 className="text-lg font-semibold text-white truncate max-w-md" title={requestDetails.path}>
+              {requestDetails.path}
+            </h2>
+          </div>
+          
           <div className="flex items-center space-x-2">
-            <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-xs font-medium">
-              {requestDetails.method}
-            </span>
-            <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusBadgeColor(requestDetails.status)}`}>
-              {requestDetails.status || "—"}
-            </span>
+            <button
+              onClick={() => copyToClipboard(window.location.href, 'URL')}
+              className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+              title="Copy current URL"
+            >
+              🔗
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+              title="Close panel"
+            >
+              ✕
+            </button>
           </div>
-          <h2 className="text-lg font-semibold text-white truncate max-w-md" title={requestDetails.path}>
-            {requestDetails.path}
-          </h2>
         </div>
-        <button
-          onClick={onClose}
-          className="p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-white/10"
-          title="Close details panel"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex space-x-2 p-4 border-b border-white/10 bg-gray-900/30">
-        <TabButton active={activeTab === "overview"} onClick={() => setActiveTab("overview")}>
-          Overview
-        </TabButton>
-        <TabButton active={activeTab === "request"} onClick={() => setActiveTab("request")}>
-          Request
-        </TabButton>
-        <TabButton active={activeTab === "response"} onClick={() => setActiveTab("response")}>
-          Response
-        </TabButton>
-        <TabButton active={activeTab === "raw"} onClick={() => setActiveTab("raw")}>
-          Raw Data
-        </TabButton>
-      </div>
+        {/* Tab Navigation */}
+        <div className="flex space-x-2 p-4 bg-gray-900/50">
+          <TabButton active={activeTab === "overview"} onClick={() => setActiveTab("overview")}>
+            📊 Overview
+          </TabButton>
+          <TabButton active={activeTab === "request"} onClick={() => setActiveTab("request")}>
+            📤 Request
+          </TabButton>
+          <TabButton active={activeTab === "response"} onClick={() => setActiveTab("response")}>
+            📥 Response
+          </TabButton>
+          <TabButton active={activeTab === "raw"} onClick={() => setActiveTab("raw")}>
+            🔍 Raw Data
+          </TabButton>
+        </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-4 space-y-4">
-        {activeTab === "overview" && (
-          <div className="space-y-4">
-            <div className="bg-white/5 rounded-lg p-4">
-              <h3 className="text-md font-semibold text-white mb-3">Request Summary</h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-400">Timestamp:</span>
-                  <div className="text-white font-mono">{requestDetails.timestamp}</div>
+        {/* Content */}
+        <div className="p-4 overflow-y-auto h-full">
+          {activeTab === "overview" && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white/5 rounded-lg p-4">
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Timestamp:</span>
+                      <div className="text-white font-mono text-sm">{requestDetails.timestamp}</div>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Service:</span>
+                      <div className="text-white font-medium">{requestDetails.service}</div>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Correlation ID:</span>
+                      <div className="text-white font-mono text-sm flex items-center space-x-2">
+                        <span>{requestDetails.correlationId}</span>
+                        <button
+                          onClick={() => copyToClipboard(requestDetails.correlationId, 'Correlation ID')}
+                          className="text-gray-400 hover:text-white text-xs"
+                          title="Copy correlation ID"
+                        >
+                          📋
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-gray-400">Duration:</span>
-                  <div className="text-white font-mono">{requestDetails.duration ? `${requestDetails.duration}ms` : "—"}</div>
-                </div>
-                <div>
-                  <span className="text-gray-400">Service:</span>
-                  <div className="text-white">{requestDetails.service}</div>
-                </div>
-                <div>
-                  <span className="text-gray-400">Client IP:</span>
-                  <div className="text-white font-mono">{requestDetails.clientIp}</div>
-                </div>
-              </div>
-            </div>
 
-            <div className="bg-white/5 rounded-lg p-4">
-              <h3 className="text-md font-semibold text-white mb-3">Request Headers</h3>
-              <JsonViewer data={mockRequestHeaders} />
-            </div>
-
-            {requestDetails.status && requestDetails.status >= 400 && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
-                <h3 className="text-md font-semibold text-red-300 mb-2">Error Information</h3>
-                <div className="text-sm text-red-200">
-                  <div>Status: {requestDetails.status}</div>
-                  <div>Error: {requestDetails.status === 500 ? "Internal Server Error" : "Request Failed"}</div>
+                <div className="bg-white/5 rounded-lg p-4">
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Duration:</span>
+                      <div className="text-white font-medium">{requestDetails.duration ? `${requestDetails.duration}ms` : "—"}</div>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Client IP:</span>
+                      <div className="text-white font-mono">{requestDetails.clientIp}</div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            )}
-          </div>
-        )}
 
-        {activeTab === "request" && (
-          <div className="space-y-4">
-            <div className="bg-white/5 rounded-lg p-4">
-              <h3 className="text-md font-semibold text-white mb-3">Request Headers</h3>
-              <JsonViewer data={mockRequestHeaders} />
+              <HeadersTable headers={requestHeaders} title="Request Headers" />
+
+              {requestDetails.status && requestDetails.status >= 400 && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
+                  <h3 className="text-md font-semibold text-red-300 mb-2">Error Information</h3>
+                  <div className="text-sm text-red-200">
+                    <div>Status: {requestDetails.status}</div>
+                    <div>Error: {requestDetails.status === 500 ? "Internal Server Error" : "Request Failed"}</div>
+                  </div>
+                </div>
+              )}
             </div>
+          )}
 
-            {mockRequestBody && (
+          {activeTab === "request" && (
+            <div className="space-y-6">
+              <HeadersTable headers={requestHeaders} title="Request Headers" />
+
+              {requestBody && (
+                <div className="bg-white/5 rounded-lg p-4">
+                  <h3 className="text-md font-semibold text-white mb-3">Request Body</h3>
+                  <JsonViewer data={requestBody} />
+                </div>
+              )}
+
               <div className="bg-white/5 rounded-lg p-4">
-                <h3 className="text-md font-semibold text-white mb-3">Request Body</h3>
-                <JsonViewer data={mockRequestBody} />
+                <h3 className="text-md font-semibold text-white mb-3">Query Parameters</h3>
+                <JsonViewer data={requestData?.queryParams || requestData?.query || {}} />
               </div>
-            )}
-
-            <div className="bg-white/5 rounded-lg p-4">
-              <h3 className="text-md font-semibold text-white mb-3">Query Parameters</h3>
-              <JsonViewer data={{ 
-                limit: "10", 
-                offset: "0", 
-                filter: "active",
-                sort: "created_at:desc" 
-              }} />
             </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === "response" && (
-          <div className="space-y-4">
-            <div className="bg-white/5 rounded-lg p-4">
-              <h3 className="text-md font-semibold text-white mb-3">Response Headers</h3>
-              <JsonViewer data={mockResponseHeaders} />
-            </div>
+          {activeTab === "response" && (
+            <div className="space-y-6">
+              <HeadersTable 
+                headers={responseHeaders} 
+                title="Response Headers" 
+              />
 
-            <div className="bg-white/5 rounded-lg p-4">
-              <h3 className="text-md font-semibold text-white mb-3">Response Body</h3>
-              <JsonViewer data={mockResponseBody} />
+              {responseBody && (
+                <div className="bg-white/5 rounded-lg p-4">
+                  <h3 className="text-md font-semibold text-white mb-3">Response Body</h3>
+                  <JsonViewer data={responseBody} />
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === "raw" && (
-          <div className="space-y-4">
-            <div className="bg-white/5 rounded-lg p-4">
-              <h3 className="text-md font-semibold text-white mb-3">Raw Request Data</h3>
-              <JsonViewer data={requestData} />
+          {activeTab === "raw" && (
+            <div className="space-y-6">
+              <div className="bg-white/5 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-md font-semibold text-white">Raw Request Data</h3>
+                  <button
+                    onClick={() => copyToClipboard(JSON.stringify(requestData, null, 2), 'Raw data')}
+                    className="px-3 py-1 bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 rounded text-sm transition-colors"
+                  >
+                    📋 Copy All
+                  </button>
+                </div>
+                <JsonViewer data={requestData} />
+              </div>
             </div>
-
-            <div className="bg-white/5 rounded-lg p-4">
-              <h3 className="text-md font-semibold text-white mb-3">Full Request Object</h3>
-              <pre className="text-xs text-gray-300 bg-black/20 rounded p-3 overflow-auto max-h-64">
-                {JSON.stringify(requestData, null, 2)}
-              </pre>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
