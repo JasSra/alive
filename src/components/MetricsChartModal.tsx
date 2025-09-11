@@ -128,14 +128,14 @@ export default function MetricsChartModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[58000] flex items-center justify-center p-4">
       <div className="bg-gray-900 border border-white/10 rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <h2 className="text-xl font-bold text-white">{title} Analytics</h2>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-white/10"
+            className="p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-red-500/20 border border-transparent hover:border-red-500/50"
             title="Close chart"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

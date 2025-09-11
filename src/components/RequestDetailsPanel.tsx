@@ -290,12 +290,12 @@ export default function RequestDetailsPanel({
     <>
       {/* Backdrop */}
       <div 
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 transition-opacity duration-300"
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[55000] transition-opacity duration-300"
         onClick={onClose}
       />
       
       {/* Panel */}
-      <div className={`fixed inset-y-0 right-0 w-1/2 bg-gradient-to-br from-gray-800 to-gray-900 border-l border-white/10 shadow-2xl z-50 transform transition-transform duration-300 ${className}`}>
+      <div className={`fixed inset-y-0 right-0 w-1/2 bg-gradient-to-br from-gray-800 to-gray-900 border-l border-white/10 shadow-2xl z-[55001] transform transition-transform duration-300 ${className}`}>
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10 bg-gray-900/80 backdrop-blur-sm">
           <div className="flex items-center space-x-3">
@@ -322,10 +322,12 @@ export default function RequestDetailsPanel({
             </button>
             <button
               onClick={onClose}
-              className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+              className="p-2 text-gray-400 hover:text-white hover:bg-red-500/20 rounded-lg transition-colors border border-transparent hover:border-red-500/50"
               title="Close panel"
             >
-              ✕
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
           </div>
         </div>

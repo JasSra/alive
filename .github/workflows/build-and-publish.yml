@@ -1,0 +1,193 @@
+name: Build and Publish ServiceStack.Alive
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  PROJECT_PATH: 'src/ServiceStack.Alive/ServiceStack.Alive.csproj'
+  PACKAGE_OUTPUT_DIRECTORY: ${{ github.workspace }}/output
+  NUGET_SOURCE_URL: 'https://api.nuget.org/v3/index.json'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # Required for GitVersion
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Install GitVersion
+      uses: gittools/actions/gitversion/setup@v0
+      with:
+        versionSpec: '5.x'
+
+    - name: Determine Version
+      id: gitversion
+      uses: gittools/actions/gitversion/execute@v0
+      with:
+        useConfigFile: true
+        configFilePath: GitVersion.yml
+
+    - name: Display Version
+      run: |
+        echo "Version: ${{ steps.gitversion.outputs.semVer }}"
+        echo "AssemblyVersion: ${{ steps.gitversion.outputs.assemblySemVer }}"
+        echo "FileVersion: ${{ steps.gitversion.outputs.assemblySemFileVer }}"
+        echo "InformationalVersion: ${{ steps.gitversion.outputs.informationalVersion }}"
+
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.PROJECT_PATH }}
+
+    - name: Build
+      run: |
+        dotnet build ${{ env.PROJECT_PATH }} \
+          --configuration Release \
+          --no-restore \
+          /p:Version=${{ steps.gitversion.outputs.semVer }} \
+          /p:AssemblyVersion=${{ steps.gitversion.outputs.assemblySemVer }} \
+          /p:FileVersion=${{ steps.gitversion.outputs.assemblySemFileVer }} \
+          /p:InformationalVersion=${{ steps.gitversion.outputs.informationalVersion }}
+
+    - name: Test
+      run: |
+        # Add test projects when available
+        # dotnet test --configuration Release --no-build --verbosity normal
+        echo "No tests to run yet"
+
+    - name: Pack
+      run: |
+        dotnet pack ${{ env.PROJECT_PATH }} \
+          --configuration Release \
+          --no-build \
+          --verbosity normal \
+          --output ${{ env.PACKAGE_OUTPUT_DIRECTORY }} \
+          /p:PackageVersion=${{ steps.gitversion.outputs.semVer }} \
+          /p:AssemblyVersion=${{ steps.gitversion.outputs.assemblySemVer }} \
+          /p:FileVersion=${{ steps.gitversion.outputs.assemblySemFileVer }} \
+          /p:InformationalVersion=${{ steps.gitversion.outputs.informationalVersion }}
+
+    - name: Upload NuGet package artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: nuget-packages
+        path: ${{ env.PACKAGE_OUTPUT_DIRECTORY }}/*.nupkg
+
+    - name: Upload symbols package artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: symbol-packages
+        path: ${{ env.PACKAGE_OUTPUT_DIRECTORY }}/*.snupkg
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Download NuGet packages
+      uses: actions/download-artifact@v4
+      with:
+        name: nuget-packages
+        path: ${{ env.PACKAGE_OUTPUT_DIRECTORY }}
+
+    - name: Download symbol packages
+      uses: actions/download-artifact@v4
+      with:
+        name: symbol-packages
+        path: ${{ env.PACKAGE_OUTPUT_DIRECTORY }}
+
+    - name: Display packages
+      run: ls -la ${{ env.PACKAGE_OUTPUT_DIRECTORY }}
+
+    # Publish to NuGet.org on version tags
+    - name: Publish to NuGet.org
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        for package in ${{ env.PACKAGE_OUTPUT_DIRECTORY }}/*.nupkg; do
+          echo "Publishing $package to NuGet.org..."
+          dotnet nuget push "$package" \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source ${{ env.NUGET_SOURCE_URL }} \
+            --skip-duplicate
+        done
+
+    # Publish to GitHub Packages on main branch
+    - name: Publish to GitHub Packages
+      if: github.ref == 'refs/heads/main'
+      run: |
+        for package in ${{ env.PACKAGE_OUTPUT_DIRECTORY }}/*.nupkg; do
+          echo "Publishing $package to GitHub Packages..."
+          dotnet nuget push "$package" \
+            --api-key ${{ secrets.GITHUB_TOKEN }} \
+            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+            --skip-duplicate
+        done
+
+  create-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Extract version from tag
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+    - name: Download NuGet packages
+      uses: actions/download-artifact@v4
+      with:
+        name: nuget-packages
+        path: ./packages
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref }}
+        name: "ServiceStack.Alive v${{ steps.version.outputs.VERSION }}"
+        body: |
+          ## ServiceStack.Alive v${{ steps.version.outputs.VERSION }}
+          
+          ### What's New
+          - Modern OpenTelemetry integration
+          - Request/Response middleware with correlation tracking  
+          - Serilog OTLP sink for structured logging
+          - Comprehensive configuration options
+          - Production-ready performance optimizations
+          
+          ### Installation
+          ```bash
+          dotnet add package ServiceStack.Alive --version ${{ steps.version.outputs.VERSION }}
+          ```
+          
+          ### NuGet Package
+          - **NuGet.org**: https://www.nuget.org/packages/ServiceStack.Alive/${{ steps.version.outputs.VERSION }}
+          - **GitHub Packages**: https://github.com/${{ github.repository }}/packages
+          
+          See the [README](https://github.com/${{ github.repository }}/blob/main/src/ServiceStack.Alive/README.md) for setup instructions and documentation.
+        files: |
+          ./packages/*.nupkg
+          ./packages/*.snupkg
+        draft: false
+        prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

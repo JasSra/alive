@@ -1,0 +1,35 @@
+mode: ContinuousDelivery
+branches:
+  main:
+    regex: ^main$
+    increment: Minor
+  develop:
+    regex: ^develop$
+    increment: Minor
+    tag: alpha
+  feature:
+    regex: ^feature?[/-]
+    increment: Minor
+    tag: alpha
+  pull-request:
+    regex: ^(pull|pull\-requests|pr)[/-]
+    increment: Inherit
+    tag: PullRequest
+  hotfix:
+    regex: ^hotfix?[/-]
+    increment: Patch
+    tag: beta
+  release:
+    regex: ^release?[/-]
+    increment: None
+    tag: rc
+  support:
+    regex: ^support?[/-]
+    increment: Patch
+
+ignore:
+  sha: []
+
+merge-message-formats: {}
+
+next-version: 1.0.0

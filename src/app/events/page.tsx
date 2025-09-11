@@ -32,6 +32,7 @@ interface IngestMetrics {
   requests: number;
   logs: number;
   events: number;
+  raw: number;
 }
 
 export default function EventsPage() {
@@ -161,19 +162,70 @@ export default function EventsPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4">
             <div className="flex items-center space-x-3">
               <div className="p-2 bg-purple-500/20 rounded-lg">
                 <span className="text-lg">🎯</span>
               </div>
               <div>
-                <p className="text-sm text-neutral-400">Total Events</p>
+                <p className="text-sm text-neutral-400">Events</p>
                 <p className="text-xl font-semibold text-white">{ingestMetrics?.events || 0}</p>
               </div>
             </div>
           </div>
 
+          <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-blue-500/20 rounded-lg">
+                <span className="text-lg">🌐</span>
+              </div>
+              <div>
+                <p className="text-sm text-neutral-400">Requests</p>
+                <p className="text-xl font-semibold text-white">{ingestMetrics?.requests || 0}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-yellow-500/20 rounded-lg">
+                <span className="text-lg">📄</span>
+              </div>
+              <div>
+                <p className="text-sm text-neutral-400">Logs</p>
+                <p className="text-xl font-semibold text-white">{ingestMetrics?.logs || 0}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-red-500/20 rounded-lg">
+                <span className="text-lg">🔧</span>
+              </div>
+              <div>
+                <p className="text-sm text-neutral-400">Raw Data</p>
+                <p className="text-xl font-semibold text-white">{ingestMetrics?.raw || 0}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-orange-500/20 rounded-lg">
+                <span className="text-lg">📊</span>
+              </div>
+              <div>
+                <p className="text-sm text-neutral-400">Filtered</p>
+                <p className="text-xl font-semibold text-white">{filteredEvents.length}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Status Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4">
             <div className="flex items-center space-x-3">
               <div className="p-2 bg-green-500/20 rounded-lg">
@@ -188,24 +240,12 @@ export default function EventsPage() {
 
           <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4">
             <div className="flex items-center space-x-3">
-              <div className="p-2 bg-blue-500/20 rounded-lg">
+              <div className="p-2 bg-cyan-500/20 rounded-lg">
                 <span className="text-lg">⏱️</span>
               </div>
               <div>
                 <p className="text-sm text-neutral-400">Time Range</p>
                 <p className="text-xl font-semibold text-white">{range}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-orange-500/20 rounded-lg">
-                <span className="text-lg">📊</span>
-              </div>
-              <div>
-                <p className="text-sm text-neutral-400">Filtered Events</p>
-                <p className="text-xl font-semibold text-white">{filteredEvents.length}</p>
               </div>
             </div>
           </div>

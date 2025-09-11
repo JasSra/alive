@@ -4,7 +4,9 @@ import { getIngestRecent, type RequestAnalytics } from "@/lib/api";
 import RequestDetailsPanel from "@/components/RequestDetailsPanel";
 import MetricsChartModal from "@/components/MetricsChartModal";
 import CompactMemoryIndicator from "@/components/CompactMemoryIndicator";
-import styles from "./filters.module.css";
+import InteractiveTimeline from "@/components/InteractiveTimeline";
+import ToolbarMenu from "@/components/ToolbarMenu";
+import styles from "./requests.module.css";
 
 interface DetailedRequestAnalytics extends RequestAnalytics {
   pathAnalytics: Array<{
@@ -60,104 +62,6 @@ interface AlternativeIngestResponse {
   kind: string;
   count: number;
   items: IngestRequest[];
-}
-
-// Lightweight timeline component integrated into the page
-function QuickTimeline({ requests }: { requests: IngestRequest[] }) {
-  const timelineData = useMemo(() => {
-    if (!requests.length) return null;
-
-    // Get the time range from actual data
-    const timestamps = requests.map(r => r.t).sort((a, b) => a - b);
-    const minTime = Math.min(...timestamps);
-    const maxTime = Math.max(...timestamps);
-    const timeRange = maxTime - minTime;
-    
-    // Create reasonable time buckets based on data range
-    const bucketCount = Math.min(60, Math.max(10, Math.ceil(timeRange / (5 * 60 * 1000)))); // 5-minute buckets, max 60 buckets
-    const bucketSize = timeRange / bucketCount;
-    
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({
-      time: minTime + (i * bucketSize),
-      count: 0,
-      errors: 0
-    }));
-
-    // Fill buckets with data
-    requests.forEach(req => {
-      const bucketIndex = Math.floor((req.t - minTime) / bucketSize);
-      if (bucketIndex >= 0 && bucketIndex < buckets.length) {
-        buckets[bucketIndex].count++;
-        if (req.status && req.status >= 400) {
-          buckets[bucketIndex].errors++;
-        }
-      }
-    });
-
-    return buckets;
-  }, [requests]);
-
-  if (!timelineData) {
-    return (
-      <div className="bg-white/5 backdrop-blur-sm rounded-lg border border-white/10 p-6">
-        <h3 className="text-lg font-semibold mb-4">Request Timeline</h3>
-        <div className="text-gray-400 text-center py-8">No timeline data available</div>
-      </div>
-    );
-  }
-
-  const maxCount = Math.max(...timelineData.map(b => b.count));
-
-  return (
-    <div className="bg-white/5 backdrop-blur-sm rounded-lg border border-white/10 p-6">
-      <h3 className="text-lg font-semibold mb-4">Request Timeline</h3>
-      <div className="flex items-end space-x-1 h-24 overflow-x-auto">
-        {timelineData.map((bucket, i) => {
-          const height = maxCount > 0 ? Math.round((bucket.count / maxCount) * 12) : 0;
-          const errorRate = bucket.count > 0 ? (bucket.errors / bucket.count) * 100 : 0;
-          const barColor = errorRate > 50 ? 'bg-red-500' : errorRate > 20 ? 'bg-yellow-500' : 'bg-blue-500';
-          
-          // Convert height to Tailwind classes
-          let heightClass = 'h-1';
-          if (height >= 11) heightClass = 'h-12';
-          else if (height >= 10) heightClass = 'h-11';
-          else if (height >= 9) heightClass = 'h-10';
-          else if (height >= 8) heightClass = 'h-9';
-          else if (height >= 7) heightClass = 'h-8';
-          else if (height >= 6) heightClass = 'h-7';
-          else if (height >= 5) heightClass = 'h-6';
-          else if (height >= 4) heightClass = 'h-5';
-          else if (height >= 3) heightClass = 'h-4';
-          else if (height >= 2) heightClass = 'h-3';
-          else if (height >= 1) heightClass = 'h-2';
-          
-          return (
-            <div
-              key={i}
-              className="group relative flex-shrink-0 w-2 cursor-pointer hover:w-3 transition-all h-full flex items-end"
-              title={`${new Date(bucket.time).toLocaleTimeString()}: ${bucket.count} requests${bucket.errors > 0 ? `, ${bucket.errors} errors` : ''}`}
-            >
-              <div className={`w-full ${barColor} ${heightClass} rounded-sm transition-all`} />
-              
-              {/* Tooltip */}
-              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 text-white text-xs rounded px-2 py-1 whitespace-nowrap z-10">
-                <div>{new Date(bucket.time).toLocaleTimeString()}</div>
-                <div>{bucket.count} requests</div>
-                {bucket.errors > 0 && <div className="text-red-300">{bucket.errors} errors</div>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="text-xs text-gray-400 mt-2 text-center">
-        {timelineData.length > 0 && (
-          <>
-            {new Date(timelineData[0].time).toLocaleString()} - {new Date(timelineData[timelineData.length - 1].time).toLocaleString()}
-          </>
-        )}
-      </div>
-    </div>
-  );
 }
 
 // Path Analytics component
@@ -338,7 +242,9 @@ export default function RequestsPage() {
   
   // Clear data state
   const [isClearing, setIsClearing] = useState(false);
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  
+  // Timeline state
+  const [selectedTimeRange, setSelectedTimeRange] = useState<{ start: number; end: number } | null>(null);
   
   // Chart modal state
   const [chartModal, setChartModal] = useState<{
@@ -412,7 +318,6 @@ export default function RequestsPage() {
       setAnalytics(null);
       setSelectedRequest(null);
       setIsPanelOpen(false);
-      setShowClearConfirm(false);
       
       // Refresh data to confirm
       await fetchData();
@@ -446,7 +351,7 @@ export default function RequestsPage() {
 
   // Filtered and processed requests
   const filteredRequests = useMemo(() => {
-    return requests
+    let filtered = requests
       .filter(req => {
         if (statusFilter === 'success') {
           return req.status && req.status >= 200 && req.status < 400;
@@ -455,9 +360,40 @@ export default function RequestsPage() {
           return req.status && req.status >= 400;
         }
         return true;
-      })
-      .sort((a, b) => b.t - a.t);
-  }, [requests, statusFilter]);
+      });
+
+    // Apply timeline selection filter
+    if (selectedTimeRange && selectedTimeRange.start > 0 && selectedTimeRange.end > 0) {
+      filtered = filtered.filter(req => 
+        req.t >= selectedTimeRange.start && req.t <= selectedTimeRange.end
+      );
+    }
+
+    return filtered.sort((a, b) => b.t - a.t);
+  }, [requests, statusFilter, selectedTimeRange]);
+
+  // Timeline interaction handlers
+  const handleTimeRangeSelect = useCallback((startTime: number, endTime: number) => {
+    if (startTime === 0 && endTime === 0) {
+      setSelectedTimeRange(null);
+    } else {
+      setSelectedTimeRange({ start: startTime, end: endTime });
+    }
+  }, []);
+
+  const handleBucketClick = useCallback((bucket: {
+    time: number;
+    count: number;
+    errors: number;
+    avgLatency: number;
+    methods: Record<string, number>;
+    services: Record<string, number>;
+    requests: IngestRequest[];
+  }) => {
+    // Show details for the clicked time bucket
+    console.log('Bucket clicked:', bucket);
+    // Could open a modal or panel with bucket details
+  }, []);
 
   // Chart generation functions
   const generateChart = (type: string) => {
@@ -532,7 +468,11 @@ export default function RequestsPage() {
             <div>
               <h1 className="text-3xl font-bold">Request Monitoring</h1>
               <p className="text-gray-400 mt-1">
-                {filteredRequests.length} requests • {statusFilter === 'all' ? 'All' : statusFilter} • Last updated: {new Date().toLocaleTimeString()}
+                {filteredRequests.length} requests • {statusFilter === 'all' ? 'All' : statusFilter}
+                {selectedTimeRange && (
+                  <span className="text-blue-400"> • Time filtered ({new Date(selectedTimeRange.start).toLocaleTimeString()} - {new Date(selectedTimeRange.end).toLocaleTimeString()})</span>
+                )}
+                • Last updated: {new Date().toLocaleTimeString()}
               </p>
             </div>
             <CompactMemoryIndicator />
@@ -540,15 +480,124 @@ export default function RequestsPage() {
         </div>
       </div>
 
+      {/* Filters & Settings Bar - Compact Dark Theme */}
+      <div className="bg-slate-800/60 backdrop-blur-lg border-b border-slate-700/50 shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse shadow-sm shadow-blue-500/50"></div>
+              <h3 className="text-sm font-medium text-white">Filters</h3>
+            </div>
+            
+            <div className="flex items-center space-x-4 flex-wrap">
+              {/* Time Range - Compact */}
+              <div className="flex items-center space-x-2">
+                <label className="text-xs font-medium text-slate-300">Time:</label>
+                <div className="flex space-x-0.5 bg-slate-700/50 backdrop-blur-sm rounded-md p-0.5 border border-slate-600/50">
+                  {['1h', '6h', '24h', '7d'].map((range) => (
+                    <button
+                      key={range}
+                      onClick={() => setTimeRange(range as '1h' | '6h' | '24h' | '7d')}
+                      className={`px-2 py-1 text-xs font-medium rounded transition-all duration-200 ${
+                        timeRange === range
+                          ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                          : 'text-slate-300 hover:text-white hover:bg-slate-600/50'
+                      }`}
+                    >
+                      {range}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Status Filter - Compact */}
+              <div className="flex items-center space-x-2">
+                <label className="text-xs font-medium text-slate-300">Status:</label>
+                <div className="flex space-x-0.5">
+                  {[
+                    { value: 'all', label: 'All', icon: '🌐' },
+                    { value: 'success', label: 'OK', icon: '✅' },
+                    { value: 'error', label: 'Err', icon: '❌' }
+                  ].map((status) => (
+                    <button
+                      key={status.value}
+                      onClick={() => setStatusFilter(status.value as 'all' | 'success' | 'error')}
+                      className={`flex items-center space-x-1 px-2 py-1 rounded text-xs font-medium transition-all duration-200 ${
+                        statusFilter === status.value
+                          ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                          : 'bg-slate-700/50 text-slate-300 hover:text-white hover:bg-slate-600/50 border border-slate-600/50'
+                      }`}
+                    >
+                      <span className="text-[10px]">{status.icon}</span>
+                      <span>{status.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Request Limit - Compact */}
+              <div className="flex items-center space-x-2">
+                <label className="text-xs font-medium text-slate-300">
+                  Limit: <span className="text-blue-400 font-mono text-[10px]">({limit})</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="range"
+                    min="25"
+                    max="500"
+                    step="25"
+                    value={limit}
+                    onChange={(e) => setLimit(Number(e.target.value))}
+                    className={`w-16 h-1.5 bg-slate-600 rounded-lg cursor-pointer ${styles.rangeSlider}`}
+                    title={`Set request limit: ${limit} requests`}
+                    aria-label="Request limit slider"
+                  />
+                </div>
+              </div>
+
+              {/* Auto-refresh Toggle - Compact */}
+              <div className="flex items-center space-x-2">
+                <label className="text-xs font-medium text-slate-300">Auto:</label>
+                <button
+                  onClick={() => setAutoRefresh(!autoRefresh)}
+                  title={`${autoRefresh ? 'Disable' : 'Enable'} auto-refresh`}
+                  className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors duration-200 ${
+                    autoRefresh ? 'bg-blue-600 shadow-sm shadow-blue-600/30' : 'bg-slate-600'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform duration-200 shadow-sm ${
+                      autoRefresh ? 'translate-x-4' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Action Buttons - Replaced with Toolbar Menu */}
+              <ToolbarMenu
+                onRefresh={fetchData}
+                onClearData={clearAllData}
+                isLoading={loading}
+                isClearing={isClearing}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 mb-6">
-            <p className="text-red-400">⚠️ {error}</p>
+          <div className="bg-red-500/10 backdrop-blur-sm border border-red-500/20 rounded-lg p-4 mb-6 shadow-lg">
+            <div className="flex items-center space-x-3 mb-3">
+              <div className="text-red-400 text-xl">⚠️</div>
+              <p className="text-red-300 font-medium">{error}</p>
+            </div>
             <button 
               onClick={fetchData}
-              className="mt-2 px-3 py-1 bg-red-500/20 hover:bg-red-500/30 rounded text-sm transition-colors"
+              className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 rounded-lg text-red-300 text-sm transition-colors duration-200 flex items-center space-x-2"
             >
-              Retry
+              <span>🔄</span>
+              <span>Retry</span>
             </button>
           </div>
         )}
@@ -560,177 +609,24 @@ export default function RequestsPage() {
           onChartClick={generateChart}
         />
 
-        {/* Timeline and Filters */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-2">
-            <QuickTimeline requests={filteredRequests} />
-          </div>
-          
-          <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-6">
-            <div className="flex items-center space-x-2 mb-6">
-              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-              <h3 className="text-lg font-semibold">Filters & Settings</h3>
+        {/* Request Timeline - Separate Section */}
+        <div className="mb-8 w-full">
+          <div className="bg-slate-800/40 backdrop-blur-lg rounded-xl border border-slate-700/50 p-6 shadow-lg w-full">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-sm shadow-green-500/50"></div>
+                <h3 className="text-lg font-semibold text-white">Request Timeline</h3>
+              </div>
+              <div className="text-sm text-slate-400">
+                Real-time visualization • {filteredRequests.length} requests
+              </div>
             </div>
-            
-            <div className="space-y-6">
-              {/* Time Range - Modern Segmented Control */}
-              <div>
-                <label className="block text-sm font-medium mb-3 text-gray-300">Time Range</label>
-                <div className="grid grid-cols-4 gap-1 bg-white/5 p-1 rounded-lg">
-                  {['1h', '6h', '24h', '7d'].map((range) => (
-                    <button
-                      key={range}
-                      onClick={() => setTimeRange(range as '1h' | '6h' | '24h' | '7d')}
-                      className={`px-3 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
-                        timeRange === range
-                          ? 'bg-blue-500 text-white shadow-sm'
-                          : 'text-gray-400 hover:text-white hover:bg-white/5'
-                      }`}
-                    >
-                      {range === '1h' ? '1 Hour' : 
-                       range === '6h' ? '6 Hours' :
-                       range === '24h' ? '24 Hours' : '7 Days'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Status Filter - Modern Pills */}
-              <div>
-                <label className="block text-sm font-medium mb-3 text-gray-300">Status Filter</label>
-                <div className="flex space-x-2">
-                  {[
-                    { value: 'all', label: 'All', icon: '🌐', bgColor: 'bg-blue-500/20', textColor: 'text-blue-300', borderColor: 'border-blue-500/30' },
-                    { value: 'success', label: 'Success', icon: '✅', bgColor: 'bg-green-500/20', textColor: 'text-green-300', borderColor: 'border-green-500/30' },
-                    { value: 'error', label: 'Errors', icon: '❌', bgColor: 'bg-red-500/20', textColor: 'text-red-300', borderColor: 'border-red-500/30' }
-                  ].map((status) => (
-                    <button
-                      key={status.value}
-                      onClick={() => setStatusFilter(status.value as 'all' | 'success' | 'error')}
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                        statusFilter === status.value
-                          ? `${status.bgColor} ${status.textColor} border ${status.borderColor}`
-                          : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-transparent'
-                      }`}
-                    >
-                      <span className="text-xs">{status.icon}</span>
-                      <span>{status.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Limit Slider */}
-              <div>
-                <label className="block text-sm font-medium mb-3 text-gray-300">
-                  Request Limit <span className="text-blue-400 font-mono">({limit})</span>
-                </label>
-                <div className="space-y-3">
-                  <input
-                    type="range"
-                    min="25"
-                    max="500"
-                    step="25"
-                    value={limit}
-                    onChange={(e) => setLimit(Number(e.target.value))}
-                    className={`w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer ${styles.slider}`}
-                    title={`Set request limit: ${limit} requests`}
-                    aria-label="Request limit slider"
-                  />
-                  <div className="flex justify-between text-xs text-gray-500">
-                    <span>25</span>
-                    <span>250</span>
-                    <span>500</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Auto-refresh Toggle */}
-              <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
-                <div className="flex items-center space-x-3">
-                  <div className={`w-3 h-3 rounded-full ${autoRefresh ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`}></div>
-                  <div>
-                    <div className="text-sm font-medium">Auto-refresh</div>
-                    <div className="text-xs text-gray-400">Update every 30 seconds</div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setAutoRefresh(!autoRefresh)}
-                  title={`${autoRefresh ? 'Disable' : 'Enable'} auto-refresh`}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${
-                    autoRefresh ? 'bg-blue-500' : 'bg-gray-700'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ${
-                      autoRefresh ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-
-              {/* Refresh Button */}
-              <button
-                onClick={fetchData}
-                disabled={loading || isClearing}
-                className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:from-blue-500/50 disabled:to-blue-600/50 disabled:cursor-not-allowed px-4 py-3 rounded-lg font-medium transition-all duration-200 flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl"
-              >
-                {loading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    <span>Refreshing...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>🔄</span>
-                    <span>Refresh Data</span>
-                  </>
-                )}
-              </button>
-
-              {/* Clear All Data Button */}
-              {!showClearConfirm ? (
-                <button
-                  onClick={() => setShowClearConfirm(true)}
-                  disabled={loading || isClearing}
-                  className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 disabled:from-red-500/50 disabled:to-red-600/50 disabled:cursor-not-allowed px-4 py-3 rounded-lg font-medium transition-all duration-200 flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl"
-                >
-                  <span>🗑️</span>
-                  <span>Clear All Data</span>
-                </button>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-orange-300 text-sm font-medium text-center">⚠️ This will delete ALL data!</p>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={clearAllData}
-                      disabled={isClearing}
-                      className="flex-1 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 disabled:from-red-600/50 disabled:to-red-700/50 disabled:cursor-not-allowed px-3 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center space-x-1 text-sm"
-                    >
-                      {isClearing ? (
-                        <>
-                          <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                          <span>Clearing...</span>
-                        </>
-                      ) : (
-                        <>
-                          <span>✓</span>
-                          <span>Confirm</span>
-                        </>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setShowClearConfirm(false)}
-                      disabled={isClearing}
-                      className="flex-1 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-600/50 disabled:cursor-not-allowed px-3 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center space-x-1 text-sm"
-                    >
-                      <span>✕</span>
-                      <span>Cancel</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <InteractiveTimeline 
+              requests={filteredRequests} 
+              onTimeRangeSelect={handleTimeRangeSelect}
+              onBucketClick={handleBucketClick}
+              className="w-full"
+            />
           </div>
         </div>
 
@@ -738,34 +634,41 @@ export default function RequestsPage() {
         <PathAnalytics analytics={analytics} />
 
         {/* Requests Table */}
-        <div className="bg-white/5 backdrop-blur-sm rounded-lg border border-white/10 overflow-hidden">
-          <div className="px-6 py-4 border-b border-white/10">
-            <h3 className="text-lg font-semibold">Recent Requests</h3>
-            <p className="text-gray-400 text-sm">Click any row to view full details</p>
+        <div className="bg-slate-800/40 backdrop-blur-lg rounded-xl border border-slate-700/50 overflow-hidden shadow-lg">
+          <div className="px-6 py-4 border-b border-slate-700/50 bg-slate-800/60">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Recent Requests</h3>
+                <p className="text-slate-400 text-sm">Click any row to view full details</p>
+              </div>
+              <div className="text-sm text-slate-400">
+                Showing {Math.min(limit, filteredRequests.length)} of {filteredRequests.length} requests
+              </div>
+            </div>
           </div>
           
           {filteredRequests.length === 0 ? (
             <div className="text-center py-12">
-              <div className="text-gray-400 text-lg mb-2">🔍</div>
-              <p className="text-gray-400">No requests found</p>
-              <p className="text-gray-500 text-sm mt-1">
+              <div className="text-slate-400 text-6xl mb-4">🔍</div>
+              <p className="text-slate-300 text-lg font-medium">No requests found</p>
+              <p className="text-slate-500 text-sm mt-2">
                 {requests.length === 0 ? 'Try generating some test data first' : 'Adjust your filters or refresh the data'}
               </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-white/5">
+                <thead className="bg-slate-800/60">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Time</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Method</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Path</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Latency</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Service</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Time</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Method</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Path</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Latency</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Service</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/10">
+                <tbody className="divide-y divide-slate-700/50">
                   {filteredRequests.slice(0, limit).map((request, index) => {
                     const status = request.status || 0;
                     const statusColor = status < 400 ? 'text-green-400' : status < 500 ? 'text-yellow-400' : 'text-red-400';
@@ -773,21 +676,21 @@ export default function RequestsPage() {
                     return (
                       <tr
                         key={index}
-                        className="hover:bg-white/5 cursor-pointer transition-colors"
+                        className="hover:bg-slate-700/30 cursor-pointer transition-colors duration-150"
                         onClick={() => {
                           setSelectedRequest(request);
                           setIsPanelOpen(true);
                         }}
                       >
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">
                           {new Date(request.t).toLocaleString()}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-300">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30">
                             {request.method || 'Unknown'}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-300 max-w-xs truncate">
+                        <td className="px-6 py-4 text-sm text-slate-300 max-w-xs truncate">
                           {extractPath(request.path)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -795,10 +698,10 @@ export default function RequestsPage() {
                             {status || 'Unknown'}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">
                           {request.duration_ms ? `${request.duration_ms}ms` : 'N/A'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-300">
                           {request.service || 'Unknown'}
                         </td>
                       </tr>

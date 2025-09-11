@@ -1,0 +1,27 @@
+.timelineBar {
+  width: 100%;
+  border-radius: 0.125rem;
+  transition: all 0.3s ease;
+}
+
+.timelineBar.h0 { height: 0%; transform: translateY(100%); }
+.timelineBar.h5 { height: 5%; transform: translateY(95%); }
+.timelineBar.h10 { height: 10%; transform: translateY(90%); }
+.timelineBar.h15 { height: 15%; transform: translateY(85%); }
+.timelineBar.h20 { height: 20%; transform: translateY(80%); }
+.timelineBar.h25 { height: 25%; transform: translateY(75%); }
+.timelineBar.h30 { height: 30%; transform: translateY(70%); }
+.timelineBar.h35 { height: 35%; transform: translateY(65%); }
+.timelineBar.h40 { height: 40%; transform: translateY(60%); }
+.timelineBar.h45 { height: 45%; transform: translateY(55%); }
+.timelineBar.h50 { height: 50%; transform: translateY(50%); }
+.timelineBar.h55 { height: 55%; transform: translateY(45%); }
+.timelineBar.h60 { height: 60%; transform: translateY(40%); }
+.timelineBar.h65 { height: 65%; transform: translateY(35%); }
+.timelineBar.h70 { height: 70%; transform: translateY(30%); }
+.timelineBar.h75 { height: 75%; transform: translateY(25%); }
+.timelineBar.h80 { height: 80%; transform: translateY(20%); }
+.timelineBar.h85 { height: 85%; transform: translateY(15%); }
+.timelineBar.h90 { height: 90%; transform: translateY(10%); }
+.timelineBar.h95 { height: 95%; transform: translateY(5%); }
+.timelineBar.h100 { height: 100%; transform: translateY(0%); }

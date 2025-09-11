@@ -1,0 +1,93 @@
+.timelineBar {
+  width: 100%;
+  border-radius: 0.125rem;
+  transition: all 0.3s ease;
+  min-height: 2px;
+}
+
+.responsiveBarContainer {
+  position: relative;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  min-width: 4px;
+  flex-grow: 1;
+}
+
+.responsiveBar {
+  width: calc(100% - 1px);
+  max-width: 100%;
+  margin: 0 auto;
+  border-radius: 0.125rem;
+  transition: all 0.3s ease;
+  min-height: 2px;
+  height: calc(var(--bar-height, 2) * 1%);
+}
+
+.selectedBar {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
+}
+
+.selectionStartBar {
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 1);
+}
+
+.tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 0.5rem;
+  z-index: 20;
+  background-color: rgba(0, 0, 0, 0.9);
+  color: white;
+  font-size: 0.75rem;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  white-space: nowrap;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.barContainer {
+  position: relative;
+  flex-shrink: 0;
+  width: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.barContainer:hover {
+  width: 1rem;
+}
+
+.barContainer:hover .timelineBar {
+  filter: brightness(1.1);
+}
+
+.legend {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  font-size: 0.75rem;
+  color: rgb(156, 163, 175);
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.legendColor {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 0.125rem;
+}
