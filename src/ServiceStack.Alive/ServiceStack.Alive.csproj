@@ -9,7 +9,7 @@
     
     <!-- Package Information -->
     <PackageId>ServiceStack.Alive</PackageId>
-    <PackageVersion>1.0.0</PackageVersion>
+    <PackageVersion>1.0.0-beta.1</PackageVersion>
     <Title>ServiceStack.Alive - Modern Telemetry for .NET</Title>
     <Authors>ServiceStack</Authors>
     <Description>Modern OpenTelemetry integration with middleware, Serilog sink, and OTLP helpers for .NET applications. Includes request/response tracking, structured logging, and comprehensive observability features.</Description>
@@ -33,6 +33,16 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Include example Program file as content, not for compilation -->
+  <ItemGroup>
+    <Compile Remove="Program.example.cs" />
+    <Content Include="Program.example.cs">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>content\</PackagePath>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

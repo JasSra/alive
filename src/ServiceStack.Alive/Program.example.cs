@@ -1,32 +1,47 @@
+// Example Program.cs for using ServiceStack.Alive
+// Copy this content to your ASP.NET Core project's Program.cs
+
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using ServiceStack.Alive.Extensions;
 
-var builder = WebApplication.CreateBuilder(args);
-
-// Add ServiceStack.Alive telemetry with comprehensive observability
-builder.Services.AddServiceStackAlive(builder.Configuration);
-
-// Add your other services
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-var app = builder.Build();
-
-// Add ServiceStack.Alive middleware early in the pipeline for request/response tracking
-app.UseServiceStackAlive();
-
-// Configure the HTTP request pipeline
-if (app.Environment.IsDevelopment())
+namespace ServiceStack.Alive.Example
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    public class Program
+    {
+        public static void Main(string[] args)
+        {
+            var builder = WebApplication.CreateBuilder(args);
+
+            // Add ServiceStack.Alive telemetry with comprehensive observability
+            builder.Services.AddServiceStackAlive(builder.Configuration);
+
+            // Add your other services
+            builder.Services.AddControllers();
+            builder.Services.AddEndpointsApiExplorer();
+            builder.Services.AddSwaggerGen();
+
+            var app = builder.Build();
+
+            // Add ServiceStack.Alive middleware early in the pipeline for request/response tracking
+            app.UseServiceStackAlive();
+
+            // Configure the HTTP request pipeline
+            if (app.Environment.IsDevelopment())
+            {
+                app.UseSwagger();
+                app.UseSwaggerUI();
+            }
+
+            app.UseHttpsRedirection();
+            app.UseAuthorization();
+            app.MapControllers();
+
+            app.Run();
+        }
+    }
 }
-
-app.UseHttpsRedirection();
-app.UseAuthorization();
-app.MapControllers();
-
-app.Run();
 
 /*
  * ServiceStack.Alive Features:
