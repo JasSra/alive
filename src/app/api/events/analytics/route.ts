@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAnalytics } from "@/lib/store";
+import { ingestStore } from "@/lib/ingestStore";
 
 export async function GET(req: NextRequest) {
   const search = req.nextUrl.searchParams;
@@ -22,6 +22,6 @@ export async function GET(req: NextRequest) {
     );
   }
   const userId = userScope === "current" ? req.headers.get("x-user-id") ?? undefined : undefined;
-  const analytics = getAnalytics(fromDate, toDate, eventPattern, userId);
+  const analytics = ingestStore.getAnalytics(fromDate, toDate, eventPattern, userId);
   return NextResponse.json(analytics);
 }

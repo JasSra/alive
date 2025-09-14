@@ -109,7 +109,7 @@ public class TelemetryOptionsValidator : IValidateOptions<TelemetryOptions>
         if (!Uri.TryCreate(options.Otlp.Endpoint, UriKind.Absolute, out _))
             errors.Add("Otlp.Endpoint must be a valid URI");
 
-        if (options.Otlp.Protocol != "Grpc" && options.Otlp.Protocol != "HttpProtobuf")
+        if (options.Otlp.Protocol != "Grpc" && options.Otlp.Protocol != "HttpProtobuf" && options.Otlp.Protocol != "HttpJson")
             errors.Add("Otlp.Protocol must be either 'Grpc' or 'HttpProtobuf'");
 
         if (options.Tracing.SamplingRatio < 0 || options.Tracing.SamplingRatio > 1)

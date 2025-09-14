@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { trackEvent } from "@/lib/store";
+import { ingestStore } from "@/lib/ingestStore";
 import type { AIEventPayload } from "@/lib/types";
 
 // Enhanced CORS headers for cross-origin event ingestion
@@ -53,7 +53,7 @@ export async function POST(
     payload.metadata.requestMethod = "POST";
 
     const userId = req.headers.get("x-user-id");
-    const result = trackEvent(eventName, payload, userId ?? undefined);
+    const result = ingestStore.trackEvent(eventName, payload, userId ?? undefined);
     return NextResponse.json(result, {
       headers: corsHeaders
     });

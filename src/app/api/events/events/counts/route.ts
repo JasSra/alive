@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEventCounts } from "@/lib/store";
+import { ingestStore } from "@/lib/ingestStore";
 
 export async function GET(req: NextRequest) {
   const search = req.nextUrl.searchParams;
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     );
   }
   const userId = userScope === "current" ? req.headers.get("x-user-id") ?? undefined : undefined;
-  const counts = getEventCounts(fromDate, toDate, userId);
+  const counts = ingestStore.getEventCounts(fromDate, toDate, userId);
   const total = counts.reduce((acc, c) => acc + c.count, 0);
   const withPct = counts.map((c) => ({ ...c, percentage: total ? (c.count / total) * 100 : 0 }));
   const ordered = (orderBy === "least" ? withPct.sort((a, b) => a.count - b.count) : withPct.sort((a, b) => b.count - a.count)).slice(0, limit);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { trackEventsBatch } from "@/lib/store";
+import { ingestStore } from "@/lib/ingestStore";
 import type { BatchTrackEventRequest } from "@/lib/types";
 
 // Enhanced CORS headers for cross-origin event ingestion
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     );
   }
   const userId = req.headers.get("x-user-id") ?? undefined;
-  const results = trackEventsBatch(body.events, userId);
+  const results = ingestStore.trackEventsBatch(body.events, userId);
   return NextResponse.json(results, {
     headers: corsHeaders
   });

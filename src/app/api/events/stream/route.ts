@@ -1,4 +1,4 @@
-import { registerSSEClient } from "@/lib/store";
+import { ingestStore } from "@/lib/ingestStore";
 import { logger } from "@/lib/logger";
 
 // Switch to Node.js runtime to test if Edge runtime is causing issues
@@ -44,7 +44,7 @@ export async function GET() {
         }
       };
       
-      const unregister = registerSSEClient(send);
+      const unregister = ingestStore.registerSSEClient(send);
       
       logger.sse('info', `✅ SSE client connected successfully`, { clientId });
 

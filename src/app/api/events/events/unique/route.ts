@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUniqueEventNames } from "@/lib/store";
+import { ingestStore } from "@/lib/ingestStore";
 
 export async function GET(req: NextRequest) {
   const search = req.nextUrl.searchParams;
@@ -21,6 +21,6 @@ export async function GET(req: NextRequest) {
     );
   }
   const userId = userScope === "current" ? req.headers.get("x-user-id") ?? undefined : undefined;
-  const unique = getUniqueEventNames(fromDate, toDate, userId);
+  const unique = ingestStore.getUniqueEventNames(fromDate, toDate, userId);
   return NextResponse.json(unique);
 }

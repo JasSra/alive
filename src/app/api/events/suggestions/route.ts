@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getSuggestions } from "@/lib/store";
+import { ingestStore } from "@/lib/ingestStore";
 
 export async function POST() {
-  const suggestions = getSuggestions();
+  const suggestions = ingestStore.getSuggestions();
   return NextResponse.json(suggestions);
 }

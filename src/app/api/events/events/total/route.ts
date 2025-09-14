@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEventCounts, getTotalCount } from "@/lib/store";
+import { ingestStore } from "@/lib/ingestStore";
 
 export async function GET(req: NextRequest) {
   const search = req.nextUrl.searchParams;
@@ -24,11 +24,11 @@ export async function GET(req: NextRequest) {
   const userId = userScope === "current" ? req.headers.get("x-user-id") ?? undefined : undefined;
   let total: number;
   if (eventPattern && eventPattern.trim()) {
-    total = getEventCounts(fromDate, toDate, userId)
+    total = ingestStore.getEventCounts(fromDate, toDate, userId)
       .filter((ec) => ec.eventName.toLowerCase().includes(eventPattern.toLowerCase()))
       .reduce((acc, c) => acc + c.count, 0);
   } else {
-    total = getTotalCount(fromDate, toDate, userId);
+    total = ingestStore.getTotalCount(fromDate, toDate, userId);
   }
   return NextResponse.json(total);
 }

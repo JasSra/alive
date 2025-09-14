@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { useLiveCounts } from '@/hooks/useLiveCounts';
+import { useGlobalTimeline } from '@/lib/globalTimeline';
 import dynamic from 'next/dynamic';
 
 // Dynamically import components to avoid SSR issues
@@ -32,6 +34,14 @@ export default function TimelinePage() {
 
 function TimelinePageContent() {
   const [selectedCorrelation, setSelectedCorrelation] = useState<string | undefined>();
+  const { counts } = useLiveCounts();
+  const { state, subscribe, getAllCorrelations } = useGlobalTimeline();
+  const [timelineState, setTimelineState] = useState(state);
+
+  useEffect(() => {
+    const unsub = subscribe(setTimelineState);
+    return unsub;
+  }, [subscribe]);
 
   const handleCorrelationSelect = (correlationId: string) => {
     setSelectedCorrelation(correlationId);
@@ -51,7 +61,7 @@ function TimelinePageContent() {
         {/* Stats Overview */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-4">
-            <div className="text-2xl font-bold text-blue-400">0</div>
+            <div className="text-2xl font-bold text-blue-400">{(counts.requests ?? 0) + (counts.logs ?? 0) + (counts.events ?? 0) + (counts.metrics ?? 0)}</div>
             <div className="text-sm text-gray-400">Total Events</div>
             <div className="text-xs text-gray-500 mt-1">
               Live tracking active
@@ -59,7 +69,7 @@ function TimelinePageContent() {
           </div>
           
           <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-4">
-            <div className="text-2xl font-bold text-green-400">0</div>
+            <div className="text-2xl font-bold text-green-400">{getAllCorrelations().length}</div>
             <div className="text-sm text-gray-400">Correlations</div>
             <div className="text-xs text-gray-500 mt-1">
               Cross-service traces
@@ -67,7 +77,7 @@ function TimelinePageContent() {
           </div>
           
           <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-4">
-            <div className="text-2xl font-bold text-purple-400">0</div>
+            <div className="text-2xl font-bold text-purple-400">{timelineState.insights?.length ?? 0}</div>
             <div className="text-sm text-gray-400">Insights</div>
             <div className="text-xs text-gray-500 mt-1">
               Analytics active
@@ -75,7 +85,7 @@ function TimelinePageContent() {
           </div>
           
           <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-4">
-            <div className="text-2xl font-bold text-yellow-400">0</div>
+            <div className="text-2xl font-bold text-yellow-400">{new Set((timelineState.events || []).map(e => e.service).filter(Boolean)).size}</div>
             <div className="text-sm text-gray-400">Services</div>
             <div className="text-xs text-gray-500 mt-1">
               Active services

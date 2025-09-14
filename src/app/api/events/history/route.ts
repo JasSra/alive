@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getHistory } from "@/lib/store";
+import { ingestStore } from "@/lib/ingestStore";
 
 export async function GET(req: NextRequest) {
   const search = req.nextUrl.searchParams;
@@ -21,6 +21,6 @@ export async function GET(req: NextRequest) {
       { status: 400 },
     );
   }
-  const history = getHistory(userId, fromDate, toDate, limit);
+  const history = ingestStore.getHistory(userId, fromDate, toDate, limit);
   return NextResponse.json(history);
 }
