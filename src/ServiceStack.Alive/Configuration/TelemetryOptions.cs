@@ -27,8 +27,8 @@ public class TelemetryOptions
 /// </summary>
 public class OtlpOptions
 {
-    public string Endpoint { get; set; } = "http://localhost:4317";
-    public string Protocol { get; set; } = "Grpc"; // "Grpc" or "HttpProtobuf"
+    public string Endpoint { get; set; } = "http://localhost:3001/api/ingest/otlp/v1";
+    public string Protocol { get; set; } = "HttpJson"; // "Grpc" or "HttpProtobuf" or "HttpJson"
     public Dictionary<string, string> Headers { get; set; } = new();
     public int TimeoutSeconds { get; set; } = 10;
 }
