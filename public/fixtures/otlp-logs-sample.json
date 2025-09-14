@@ -1,0 +1,122 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "sample-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.2.3"
+            }
+          },
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "sample-service",
+            "version": "1.0.0"
+          },
+          "logRecords": [
+            {
+              "timeUnixNano": "1757819300000000000",
+              "severityNumber": 9,
+              "severityText": "Info",
+              "body": {
+                "stringValue": "User authentication successful"
+              },
+              "attributes": [
+                {
+                  "key": "user.id",
+                  "value": {
+                    "stringValue": "user123"
+                  }
+                },
+                {
+                  "key": "session.id",
+                  "value": {
+                    "stringValue": "sess_abc123"
+                  }
+                },
+                {
+                  "key": "correlation.id",
+                  "value": {
+                    "stringValue": "corr_xyz789"
+                  }
+                }
+              ]
+            },
+            {
+              "timeUnixNano": "1757819301000000000",
+              "severityNumber": 13,
+              "severityText": "Warn", 
+              "body": {
+                "stringValue": "Rate limit approaching for user"
+              },
+              "attributes": [
+                {
+                  "key": "user.id",
+                  "value": {
+                    "stringValue": "user456"
+                  }
+                },
+                {
+                  "key": "rate_limit.current",
+                  "value": {
+                    "intValue": 95
+                  }
+                },
+                {
+                  "key": "rate_limit.max",
+                  "value": {
+                    "intValue": 100
+                  }
+                }
+              ]
+            },
+            {
+              "timeUnixNano": "1757819302000000000",
+              "severityNumber": 17,
+              "severityText": "Error",
+              "body": {
+                "stringValue": "Database connection timeout"
+              },
+              "attributes": [
+                {
+                  "key": "db.connection.pool",
+                  "value": {
+                    "stringValue": "primary"
+                  }
+                },
+                {
+                  "key": "timeout.duration",
+                  "value": {
+                    "intValue": 5000
+                  }
+                },
+                {
+                  "key": "error.code",
+                  "value": {
+                    "stringValue": "DB_TIMEOUT"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
