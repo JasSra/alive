@@ -1,0 +1,35 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": { "attributes": [ { "key": "service.name", "value": { "stringValue": "fixture-service" } } ] },
+      "scopeMetrics": [
+        {
+          "scope": { "name": "fixture.scope", "version": "1.0.0" },
+          "metrics": [
+            {
+              "name": "payload_size_bytes",
+              "unit": "By",
+              "description": "Payload sizes",
+              "exponentialHistogram": {
+                "dataPoints": [
+                  {
+                    "timeUnixNano": 1726310400000000000,
+                    "count": 50,
+                    "sum": 120000,
+                    "scale": 4,
+                    "zeroCount": 0,
+                    "positive": {
+                      "offset": 0,
+                      "bucketCounts": [0, 2, 5, 12, 20, 8, 3]
+                    },
+                    "attributes": [ { "key": "route", "value": { "stringValue": "/upload" } } ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

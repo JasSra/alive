@@ -1,15 +1,17 @@
 import { parseSyslog } from "./parsers/syslog";
 import { transformOtlpLogsToBase } from "./parsers/otlpAdapter";
-import { ingestStore, type IngestKind, type RequestItem, type LogItem, type EventItem, type RawItem } from "./ingestStore";
+import { ingestStore, type IngestKind, type RequestItem, type LogItem, type EventItem, type RawItem, type MetricItem } from "./ingestStore";
 import { publishUnifiedEvent, publishUnifiedLog, publishUnifiedRequest } from "./store";
 
 // Heuristics to detect payload type
-function looksLikeOtlp(obj: unknown): obj is { resourceLogs: Array<{ scopeLogs?: unknown[] }> } {
+function looksLikeOtlp(obj: unknown): boolean {
   if (!obj || typeof obj !== "object") return false;
   const o = obj as Record<string, unknown>;
-  const rl = o.resourceLogs as unknown;
-  if (!Array.isArray(rl)) return false;
-  return rl.length === 0 || typeof rl[0] === "object";
+  const rl = o["resourceLogs"] as unknown;
+  const rs = o["resourceSpans"] as unknown;
+  const rm = o["resourceMetrics"] as unknown;
+  const isArrObj = (x: unknown) => Array.isArray(x) && (x.length === 0 || typeof x[0] === "object");
+  return isArrObj(rl) || isArrObj(rs) || isArrObj(rm);
 }
 
 function isProbablySyslogText(text: string): boolean {
@@ -26,7 +28,7 @@ export async function unifiedIngest(input: unknown): Promise<UnifiedResult> {
   console.log(`[UNIFIED:${ingestId}] 🔍 Starting unified ingestion, input type: ${typeof input}`);
   
   try {
-    const byKind: Record<IngestKind, number> = { requests: 0, logs: 0, events: 0, raw: 0 };
+  const byKind: Record<IngestKind, number> = { requests: 0, logs: 0, events: 0, metrics: 0, raw: 0 };
 
     // Case 1: string body (could be syslog or plain text lines)
     if (typeof input === "string") {
@@ -93,6 +95,40 @@ export async function unifiedIngest(input: unknown): Promise<UnifiedResult> {
   for (const m of base) {
           // heuristic classification: requests vs logs vs events
       const a = (m.attributes || {}) as Record<string, unknown>;
+          // First, detect OTLP metrics promoted to base messages (metric.* attributes)
+          if (a["metric.name"]) {
+            const metric: MetricItem = {
+              t: m.ts,
+              service: m.serviceName,
+              name: String(a["metric.name"] ?? "metric"),
+              value: (typeof a["metric.value"] === "number" || typeof a["metric.value"] === "string") ? (a["metric.value"] as number | string) : undefined,
+              unit: typeof a["metric.unit"] === "string" ? (a["metric.unit"] as string) : undefined,
+              kind: typeof a["metric.kind"] === "string" ? (a["metric.kind"] as string) : undefined,
+              attrs: m.attributes,
+              raw: m.raw,
+            };
+            ingestStore.push("metrics", metric);
+            byKind.metrics++;
+            continue;
+          }
+          // Fallback: manual OTLP metric extraction emits body like "metric: <name>"
+          // In case attributes were lost upstream, detect by message prefix
+          if (typeof m.message === "string" && m.message.startsWith("metric:")) {
+            const name = m.message.slice("metric:".length).trim() || "metric";
+            const metric: MetricItem = {
+              t: m.ts,
+              service: m.serviceName,
+              name,
+              value: (typeof a["metric.value"] === "number" || typeof a["metric.value"] === "string") ? (a["metric.value"] as number | string) : undefined,
+              unit: typeof a["metric.unit"] === "string" ? (a["metric.unit"] as string) : undefined,
+              kind: typeof a["metric.kind"] === "string" ? (a["metric.kind"] as string) : undefined,
+              attrs: m.attributes,
+              raw: m.raw,
+            };
+            ingestStore.push("metrics", metric);
+            byKind.metrics++;
+            continue;
+          }
           if (a.url || a.status || a.duration_ms || a.responseTimeMs) {
             console.log(`[UNIFIED:${ingestId}] 🌐 Classified as request: ${a.method || 'unknown'} ${a.url || a.path || 'unknown'}`);
             const req: RequestItem = {

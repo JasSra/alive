@@ -31,8 +31,8 @@ Add to your `appsettings.json`:
     "Environment": "production",
     
     "Otlp": {
-      "Endpoint": "http://localhost:4317",
-      "Protocol": "Grpc",
+      "Endpoint": "http://localhost:3001/api/ingest/otlp",
+      "Protocol": "HttpProtobuf",
       "Headers": {},
       "TimeoutSeconds": 10
     },
@@ -169,8 +169,8 @@ Log.Logger = new LoggerConfiguration()
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `Endpoint` | string | "http://localhost:4317" | OTLP endpoint URL |
-| `Protocol` | string | "Grpc" | Protocol: "Grpc" or "HttpProtobuf" |
+| `Endpoint` | string | `http://localhost:3001/api/ingest/otlp` | OTLP endpoint base URL (the SDK appends `/v1/{signal}`) |
+| `Protocol` | string | "HttpProtobuf" | Protocol: "Grpc" or "HttpProtobuf" |
 | `Headers` | Dictionary | {} | Custom headers for OTLP requests |
 | `TimeoutSeconds` | int | 10 | Request timeout in seconds |
 
