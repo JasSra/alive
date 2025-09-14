@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
+import { useLiveCounts } from "@/hooks/useLiveCounts";
 
 interface NavItem {
   href: string;
@@ -72,6 +73,18 @@ export default function Navigation() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isResourcesOpen, setIsResourcesOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const { counts, isConnected } = useLiveCounts();
+
+  // Function to get live count for each nav item
+  const getLiveCount = (href: string): number => {
+    switch (href) {
+      case '/requests': return counts.requests;
+      case '/logs': return counts.logs;
+      case '/events': return counts.events;
+      case '/metrics': return counts.metrics;
+      default: return 0;
+    }
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -118,15 +131,14 @@ export default function Navigation() {
                   <div className="flex items-center space-x-2">
                     <span className="text-lg">{item.icon}</span>
                     <span>{item.label}</span>
-                    {item.badge && (
-                      <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
-                        isActive 
-                          ? "bg-white/20 text-white" 
-                          : "bg-gray-600/50 text-gray-300 group-hover:bg-gray-500/50"
-                      }`}>
-                        {item.badge}
-                      </span>
-                    )}
+                    {/* Live count badge */}
+                    <span className={`px-2 py-0.5 text-xs rounded-full font-medium transition-all ${
+                      isActive 
+                        ? "bg-white/20 text-white" 
+                        : "bg-gray-600/50 text-gray-300 group-hover:bg-gray-500/50"
+                    } ${!isConnected ? 'opacity-50' : ''}`}>
+                      {getLiveCount(item.href)}
+                    </span>
                   </div>
                   {isActive && (
                     <div className="absolute inset-x-0 bottom-0 h-0.5 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full"></div>
@@ -206,8 +218,14 @@ export default function Navigation() {
           {/* Status Indicator */}
           <div className="hidden sm:flex items-center space-x-3">
             <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              <span className="text-sm text-gray-400">Live</span>
+              <div className={`w-2 h-2 rounded-full transition-all ${
+                isConnected 
+                  ? 'bg-green-400 animate-pulse' 
+                  : 'bg-red-400'
+              }`}></div>
+              <span className="text-sm text-gray-400">
+                {isConnected ? 'Live' : 'Offline'}
+              </span>
             </div>
           </div>
         </div>
@@ -234,15 +252,14 @@ export default function Navigation() {
                       <div className="flex-1">
                         <div className="flex items-center space-x-2">
                           <span className="font-medium">{item.label}</span>
-                          {item.badge && (
-                            <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
-                              isActive 
-                                ? "bg-white/20 text-white" 
-                                : "bg-gray-600/50 text-gray-300"
-                            }`}>
-                              {item.badge}
-                            </span>
-                          )}
+                          {/* Live count badge */}
+                          <span className={`px-2 py-0.5 text-xs rounded-full font-medium transition-all ${
+                            isActive 
+                              ? "bg-white/20 text-white" 
+                              : "bg-gray-600/50 text-gray-300"
+                          } ${!isConnected ? 'opacity-50' : ''}`}>
+                            {getLiveCount(item.href)}
+                          </span>
                         </div>
                         <p className="text-xs text-gray-400 mt-0.5">{item.description}</p>
                       </div>
