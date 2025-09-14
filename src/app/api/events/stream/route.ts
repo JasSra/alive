@@ -1,4 +1,5 @@
 import { registerSSEClient } from "@/lib/store";
+import { logger } from "@/lib/logger";
 
 // Switch to Node.js runtime to test if Edge runtime is causing issues
 export const runtime = "nodejs";
@@ -22,6 +23,10 @@ export async function OPTIONS() {
 }
 
 export async function GET() {
+  const clientId = Math.random().toString(36).substr(2, 9);
+  
+  logger.sse('info', `🔗 New SSE client connecting`, { clientId });
+  
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const encoder = new TextEncoder();
@@ -33,12 +38,15 @@ export async function GET() {
             controller.enqueue(encoder.encode(chunk));
           } catch {
             isClosed = true;
+            logger.sse('warn', `🔌 SSE client disconnected unexpectedly`, { clientId });
             console.log('[SSE] Controller already closed, marking as closed');
           }
         }
       };
       
       const unregister = registerSSEClient(send);
+      
+      logger.sse('info', `✅ SSE client connected successfully`, { clientId });
 
       const keepAlive = setInterval(() => {
         if (!isClosed) {
@@ -46,6 +54,7 @@ export async function GET() {
             send(`event: ping\ndata: {"t":${Date.now()}}\n\n`);
           } catch {
             isClosed = true;
+            logger.sse('warn', `💔 SSE keep-alive failed`, { clientId });
           }
         }
       }, 25000);
@@ -57,6 +66,7 @@ export async function GET() {
         isClosed = true;
         clearInterval(keepAlive);
         unregister();
+        logger.sse('info', `🚪 SSE client disconnected`, { clientId });
         try {
           controller.close();
         } catch {

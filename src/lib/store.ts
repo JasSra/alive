@@ -19,6 +19,7 @@ import type {
   AISuggestion,
   BatchTrackEventItem,
 } from "./types";
+import { logger } from "./logger";
 
 // Use globalThis to ensure shared state across different runtime contexts
 const globalStore = globalThis as unknown as {
@@ -180,35 +181,66 @@ export function getTimeBuckets(from: Date, to: Date, stepMinutes = 5, topNPaths 
 type SSESend = (chunk: string) => void;
 
 function broadcast(data: unknown) {
+  logger.store('info', `📡 Broadcasting to clients`, { 
+    sseClients: sseClients.size, 
+    wsClients: wsClients.size 
+  });
   console.log(`[store] Broadcasting to ${sseClients.size} SSE clients and ${wsClients.size} WS clients:`, data);
+  
   const payload = `data: ${JSON.stringify(data)}\n\n`;
+  let sseSuccess = 0;
+  let sseErrors = 0;
+  
   for (const send of sseClients) {
     try {
       console.log("[store] Sending SSE payload");
       send(payload);
+      sseSuccess++;
     } catch (e) {
+      sseErrors++;
+      logger.store('warn', `⚠️ Failed to send SSE`, { error: e instanceof Error ? e.message : 'Unknown error' });
       console.error("[store] Failed to send SSE:", e);
       // ignore failed clients
     }
   }
+  
   // WebSocket broadcast (best-effort)
   const wsPayload = JSON.stringify(data);
+  let wsSuccess = 0;
+  let wsErrors = 0;
+  
   for (const ws of wsClients) {
     try {
       const w = ws as { readyState?: number; send: (s: string) => void };
       // 1 === OPEN in browsers; if undefined, try anyway
       if (w.readyState === undefined || w.readyState === 1) {
         w.send(wsPayload);
+        wsSuccess++;
       }
     } catch {
-      // ignore
+      wsErrors++;
     }
   }
+  
+  logger.store('debug', `📡 Broadcast complete`, {
+    sse: { success: sseSuccess, errors: sseErrors },
+    ws: { success: wsSuccess, errors: wsErrors }
+  });
 }
 
 export function registerSSEClient(send: SSESend) {
+  const clientId = Math.random().toString(36).substr(2, 9);
+  logger.sse('info', `➕ Registering SSE client`, { 
+    clientId,
+    totalClients: sseClients.size + 1 
+  });
   console.log("[store] Registering SSE client, total clients:", sseClients.size + 1);
+  
   sseClients.add(send);
+  
+  // Log connection statistics periodically
+  logger.connectionStats(sseClients.size, wsClients.size);
+  
   // initial ping
   try {
     send(`event: ping\ndata: {"t":${Date.now()}}\n\n`);
@@ -216,8 +248,13 @@ export function registerSSEClient(send: SSESend) {
     // ignore
   }
   return () => {
+    logger.sse('info', `➖ Unregistering SSE client`, { 
+      clientId,
+      remainingClients: sseClients.size - 1 
+    });
     console.log("[store] Unregistering SSE client");
     sseClients.delete(send);
+    logger.connectionStats(sseClients.size, wsClients.size);
   };
 }
 
