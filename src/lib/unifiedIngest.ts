@@ -2,6 +2,7 @@ import { parseSyslog } from "./parsers/syslog";
 import { transformOtlpLogsToBase } from "./parsers/otlpAdapter";
 import { ingestStore, type IngestKind, type RequestItem, type LogItem, type EventItem, type RawItem, type MetricItem } from "./ingestStore";
 import { publishUnifiedEvent, publishUnifiedLog, publishUnifiedRequest } from "./store";
+import { getGlobalTimeline, type GlobalTimelineEvent } from "./globalTimeline";
 
 // Heuristics to detect payload type
 function looksLikeOtlp(obj: unknown): boolean {
@@ -21,9 +22,103 @@ function isProbablySyslogText(text: string): boolean {
 
 export type UnifiedResult = { success: true; written: number; byKind: Record<IngestKind, number> } | { success: false; message: string };
 
+// Helper to convert ingested items to global timeline events
+function toTimelineEvent(
+  item: RequestItem | LogItem | EventItem | MetricItem | RawItem, 
+  kind: IngestKind,
+  correlationId?: string
+): Omit<GlobalTimelineEvent, 'id'> {
+  const base = {
+    timestamp: item.t,
+    correlationId: correlationId,
+    service: item.service,
+    type: kind as GlobalTimelineEvent['type'],
+  };
+
+  switch (kind) {
+    case 'requests':
+      const req = item as RequestItem;
+      return {
+        ...base,
+        data: {
+          message: `${req.method || 'UNKNOWN'} ${req.path || 'unknown'}`,
+          method: req.method,
+          path: req.path,
+          status: req.status,
+          duration: req.duration_ms,
+          attrs: req.attrs,
+        },
+        color: req.status && req.status >= 400 ? '#ef4444' : '#10b981',
+      };
+      
+    case 'logs':
+      const log = item as LogItem;
+      const severityColors: Record<string, string> = {
+        'error': '#ef4444',
+        'warn': '#f59e0b', 
+        'warning': '#f59e0b',
+        'info': '#3b82f6',
+        'debug': '#6b7280',
+      };
+      const severityStr = typeof log.severity === 'string' ? log.severity.toLowerCase() : 
+                         typeof log.severity === 'number' && log.severity >= 17 ? 'error' :
+                         typeof log.severity === 'number' && log.severity >= 13 ? 'warn' : 'info';
+      return {
+        ...base,
+        data: {
+          message: log.message,
+          severity: log.severity,
+          attrs: log.attrs,
+        },
+        color: severityColors[severityStr] || '#6b7280',
+      };
+      
+    case 'events':
+      const event = item as EventItem;
+      return {
+        ...base,
+        data: {
+          message: `Event: ${event.name}`,
+          name: event.name,
+          attrs: event.attrs,
+        },
+        color: '#8b5cf6',
+      };
+      
+    case 'metrics':
+      const metric = item as MetricItem;
+      return {
+        ...base,
+        data: {
+          message: `${metric.name}: ${metric.value}${metric.unit ? ' ' + metric.unit : ''}`,
+          name: metric.name,
+          value: metric.value,
+          attrs: metric.attrs,
+        },
+        color: '#06b6d4',
+      };
+      
+    case 'raw':
+      const raw = item as RawItem;
+      return {
+        ...base,
+        data: {
+          message: `Raw data: ${raw.dataType}`,
+          attrs: { 
+            dataType: raw.dataType, 
+            contentType: raw.contentType,
+            source: raw.source 
+          },
+        },
+        color: '#64748b',
+      };
+  }
+}
+
 export async function unifiedIngest(input: unknown): Promise<UnifiedResult> {
   const ingestId = Math.random().toString(36).substr(2, 9);
   const startTime = Date.now();
+  const globalTimeline = getGlobalTimeline();
   
   console.log(`[UNIFIED:${ingestId}] 🔍 Starting unified ingestion, input type: ${typeof input}`);
   
@@ -108,6 +203,7 @@ export async function unifiedIngest(input: unknown): Promise<UnifiedResult> {
               raw: m.raw,
             };
             ingestStore.push("metrics", metric);
+            globalTimeline.addEvent(toTimelineEvent(metric, "metrics", m.correlationId));
             byKind.metrics++;
             continue;
           }
@@ -126,6 +222,7 @@ export async function unifiedIngest(input: unknown): Promise<UnifiedResult> {
               raw: m.raw,
             };
             ingestStore.push("metrics", metric);
+            globalTimeline.addEvent(toTimelineEvent(metric, "metrics", m.correlationId));
             byKind.metrics++;
             continue;
           }
@@ -142,6 +239,7 @@ export async function unifiedIngest(input: unknown): Promise<UnifiedResult> {
               raw: m.raw,
             };
             ingestStore.push("requests", req);
+            globalTimeline.addEvent(toTimelineEvent(req, "requests", m.correlationId));
             publishUnifiedRequest(req);
             byKind.requests++;
           } else if (m.message || m.severity !== undefined) {
@@ -155,12 +253,14 @@ export async function unifiedIngest(input: unknown): Promise<UnifiedResult> {
               raw: m.raw,
             };
             ingestStore.push("logs", log);
+            globalTimeline.addEvent(toTimelineEvent(log, "logs", m.correlationId));
             publishUnifiedLog({ t: log.t, service: log.service, severity: log.severity, message: log.message, attrs: log.attrs });
             byKind.logs++;
           } else {
             console.log(`[UNIFIED:${ingestId}] 🎯 Classified as event: ${m.message || 'event'}`);
             const ev: EventItem = { t: m.ts, service: m.serviceName, name: m.message || "event", attrs: m.attributes, raw: m.raw };
             ingestStore.push("events", ev);
+            globalTimeline.addEvent(toTimelineEvent(ev, "events", m.correlationId));
             publishUnifiedEvent({ name: ev.name, timestamp: ev.t, payload: { serviceName: ev.service, metadata: ev.attrs } });
             byKind.events++;
           }
@@ -180,6 +280,11 @@ export async function unifiedIngest(input: unknown): Promise<UnifiedResult> {
           const mapped = mapGeneric(it as Record<string, unknown>);
           console.log(`[UNIFIED:${ingestId}] 📄 Item ${count + 1}/${obj.length} classified as: ${mapped.kind}`);
           ingestStore.push(mapped.kind, mapped.item);
+          
+          // Add to global timeline with correlation
+          const correlationId = extractItemCorrelation(mapped.item);
+          globalTimeline.addEvent(toTimelineEvent(mapped.item, mapped.kind, correlationId));
+          
           // publish
           if (mapped.kind === "requests") publishUnifiedRequest(mapped.item as RequestItem);
           else if (mapped.kind === "logs") {
@@ -218,6 +323,11 @@ export async function unifiedIngest(input: unknown): Promise<UnifiedResult> {
   const mapped = mapGeneric(obj as Record<string, unknown>);
   console.log(`[UNIFIED:${ingestId}] 🏷️ Single object classified as: ${mapped.kind}`);
   ingestStore.push(mapped.kind, mapped.item);
+  
+      // Add to global timeline
+      const correlationId = extractItemCorrelation(mapped.item);
+      globalTimeline.addEvent(toTimelineEvent(mapped.item, mapped.kind, correlationId));
+      
       if (mapped.kind === "requests") publishUnifiedRequest(mapped.item as RequestItem);
       else if (mapped.kind === "logs") {
         const li = mapped.item as LogItem;
@@ -320,4 +430,19 @@ function mapGeneric(obj: Record<string, unknown> | string): { kind: IngestKind; 
     contentType: typeof obj === 'object' ? 'application/json' : 'text/plain'
   };
   return { kind: "raw", item };
+}
+
+// Helper to extract correlation ID from ingested items
+function extractItemCorrelation(item: RequestItem | LogItem | EventItem | MetricItem | RawItem): string | undefined {
+  const attrs = item.attrs as Record<string, unknown> | undefined;
+  if (!attrs) return undefined;
+  
+  return (attrs["correlation.id"] as string) ||
+         (attrs["correlationId"] as string) ||
+         (attrs["correlation_id"] as string) ||
+         (attrs["x-correlation-id"] as string) ||
+         (attrs["traceId"] as string) ||
+         (attrs["sessionId"] as string) ||
+         (attrs["requestId"] as string) ||
+         (attrs["userId"] as string);
 }

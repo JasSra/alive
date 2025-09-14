@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 import { useLiveCounts } from "@/hooks/useLiveCounts";
+import GlobalTimelineWidget from "./GlobalTimelineWidget";
 
 interface NavItem {
   href: string;
@@ -48,6 +49,13 @@ const navigationItems: NavItem[] = [
     icon: "⚡",
     description: "Live events & streaming",
     badge: "live"
+  },
+  {
+    href: "/timeline",
+    label: "Timeline",
+    icon: "📊",
+    description: "Global timeline & analytics",
+    badge: "new"
   }
 ];
 
@@ -82,6 +90,7 @@ export default function Navigation() {
       case '/logs': return counts.logs;
       case '/events': return counts.events;
       case '/metrics': return counts.metrics;
+      case '/timeline': return counts.requests + counts.logs + counts.events + counts.metrics;
       default: return 0;
     }
   };
@@ -215,8 +224,9 @@ export default function Navigation() {
             </button>
           </div>
 
-          {/* Status Indicator */}
+          {/* Status Indicator & Global Timeline */}
           <div className="hidden sm:flex items-center space-x-3">
+            <GlobalTimelineWidget compact />
             <div className="flex items-center space-x-2">
               <div className={`w-2 h-2 rounded-full transition-all ${
                 isConnected 

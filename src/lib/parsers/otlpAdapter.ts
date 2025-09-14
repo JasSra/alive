@@ -21,6 +21,40 @@ const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof
 // Safe property reader that avoids `any` usage
 const read = (obj: unknown, key: string): unknown => (isObj(obj) ? obj[key] : undefined);
 
+// Enhanced correlation ID extraction from multiple OTLP sources
+function extractCorrelationId(attrs: Record<string, unknown>, rec: PartialRecord): string | undefined {
+  // Priority order for correlation ID extraction:
+  // 1. Explicit correlation IDs
+  const explicit = (attrs["correlation.id"] as string) || 
+                   (attrs["correlationId"] as string) || 
+                   (attrs["correlation_id"] as string) ||
+                   (attrs["x-correlation-id"] as string);
+  if (explicit) return explicit;
+  
+  // 2. Trace ID as fallback for distributed tracing
+  if (rec.traceId) return `trace:${rec.traceId}`;
+  
+  // 3. Session IDs for user correlation
+  const session = (attrs["session.id"] as string) || 
+                  (attrs["sessionId"] as string) ||
+                  (attrs["session_id"] as string);
+  if (session) return `session:${session}`;
+  
+  // 4. Request ID for HTTP correlation
+  const request = (attrs["request.id"] as string) || 
+                  (attrs["requestId"] as string) ||
+                  (attrs["http.request.id"] as string);
+  if (request) return `request:${request}`;
+  
+  // 5. User ID for user-based correlation
+  const user = (attrs["user.id"] as string) || 
+               (attrs["userId"] as string) ||
+               (attrs["user_id"] as string);
+  if (user) return `user:${user}`;
+  
+  return undefined;
+}
+
 function uuid() {
   const g = globalThis as unknown as { crypto?: { randomUUID?: () => string } };
   return g.crypto?.randomUUID?.() ?? Math.random().toString(16).slice(2) + Date.now().toString(16);
@@ -65,6 +99,9 @@ function fromRecord(rec: PartialRecord): BaseMessage {
     attrs["event_type"] = "log";
   }
   
+  // Enhanced correlation ID extraction from multiple sources
+  const correlationId = extractCorrelationId(attrs, rec);
+  
   return {
     id: uuid(),
     ts,
@@ -74,7 +111,7 @@ function fromRecord(rec: PartialRecord): BaseMessage {
     severity: typeof rec.severityNumber === "number" ? rec.severityNumber : undefined,
     traceId: rec.traceId,
     spanId: rec.spanId,
-    correlationId: (attrs["correlation.id"] as string) || (attrs["correlationId"] as string) || undefined,
+    correlationId,
     attributes: attrs,
     raw: rec,
   };
