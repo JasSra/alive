@@ -1,0 +1,35 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": { "attributes": [ { "key": "service.name", "value": { "stringValue": "fixture-service" } } ] },
+      "scopeMetrics": [
+        {
+          "scope": { "name": "fixture.scope", "version": "1.0.0" },
+          "metrics": [
+            {
+              "name": "request_latency_ms",
+              "unit": "ms",
+              "description": "Request latency",
+              "summary": {
+                "dataPoints": [
+                  {
+                    "timeUnixNano": 1726310400000000000,
+                    "count": 100,
+                    "sum": 12345,
+                    "quantileValues": [
+                      { "quantile": 0.5, "value": 100 },
+                      { "quantile": 0.9, "value": 200 },
+                      { "quantile": 0.95, "value": 280 },
+                      { "quantile": 0.99, "value": 450 }
+                    ],
+                    "attributes": [ { "key": "route", "value": { "stringValue": "/api/orders" } } ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

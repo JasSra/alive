@@ -45,8 +45,8 @@ CONFIGURATION (appsettings.json):
     "ServiceVersion": "1.0.0",
     "Environment": "production",
     "Otlp": {
-      "Endpoint": "http://localhost:4317",
-      "Protocol": "Grpc",
+      "Endpoint": "http://localhost:3001/api/ingest/otlp",
+      "Protocol": "HttpProtobuf",
       "TimeoutSeconds": 10
     },
     "Features": {

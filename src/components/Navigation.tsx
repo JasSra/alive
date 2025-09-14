@@ -35,6 +35,13 @@ const navigationItems: NavItem[] = [
     badge: "logs"
   },
   {
+    href: "/metrics",
+    label: "Metrics",
+    icon: "📈",
+    description: "Time-series metrics",
+    badge: "metrics"
+  },
+  {
     href: "/events",
     label: "Events",
     icon: "⚡",

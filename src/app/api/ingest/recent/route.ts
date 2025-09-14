@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
   let items: unknown[];
   if (kind === "requests") items = snap.requests;
   else if (kind === "events") items = snap.events;
+  else if (kind === "metrics") items = snap.metrics;
   else items = snap.logs;
 
   const start = Math.max(0, items.length - limit);

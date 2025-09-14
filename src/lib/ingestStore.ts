@@ -1,7 +1,7 @@
 // Simple in-memory ring buffers for unified ingest (requests, logs, events)
 // Capacity is config driven via env or defaults to 2000 items each
 
-export type IngestKind = "requests" | "logs" | "events" | "raw";
+export type IngestKind = "requests" | "logs" | "events" | "metrics" | "raw";
 
 export type RequestItem = {
   t: number; // epoch ms
@@ -27,6 +27,17 @@ export type EventItem = {
   t: number;
   service?: string;
   name: string;
+  attrs?: Record<string, unknown>;
+  raw?: unknown;
+};
+
+export type MetricItem = {
+  t: number;
+  service?: string;
+  name: string;
+  value?: number | string;
+  unit?: string;
+  kind?: string; // gauge | sum | histogram_* | ...
   attrs?: Record<string, unknown>;
   raw?: unknown;
 };
@@ -69,6 +80,7 @@ const globalStore = globalThis as unknown as {
     requests: Ring<RequestItem>;
     logs: Ring<LogItem>;
     events: Ring<EventItem>;
+    metrics: Ring<MetricItem>;
     raw: Ring<RawItem>;
   };
 };
@@ -80,6 +92,7 @@ if (!globalStore.__unifiedIngest) {
     requests: createRing<RequestItem>(CAP),
     logs: createRing<LogItem>(CAP),
     events: createRing<EventItem>(CAP),
+    metrics: createRing<MetricItem>(CAP),
     raw: createRing<RawItem>(CAP),
   };
 }
@@ -87,7 +100,7 @@ if (!globalStore.__unifiedIngest) {
 const store = globalStore.__unifiedIngest!;
 
 export const ingestStore = {
-  push(kind: IngestKind, item: RequestItem | LogItem | EventItem | RawItem) {
+  push(kind: IngestKind, item: RequestItem | LogItem | EventItem | MetricItem | RawItem) {
     const beforeCounts = this.counts();
     
     if (kind === "requests") {
@@ -102,6 +115,10 @@ export const ingestStore = {
       const event = item as EventItem;
       console.log(`[STORE] 🎯 Storing event: ${event.name} (service: ${event.service || 'unknown'})`);
       pushRing(store.events, event);
+    } else if (kind === "metrics") {
+      const metric = item as MetricItem;
+      console.log(`[STORE] 📈 Storing metric: ${metric.name} = ${metric.value ?? 'n/a'} ${metric.unit ?? ''} (kind: ${metric.kind ?? 'n/a'})`);
+      pushRing(store.metrics, metric);
     } else if (kind === "raw") {
       const raw = item as RawItem;
       console.log(`[STORE] 📦 Storing raw data: ${raw.dataType} from ${raw.source || 'unknown'}`);
@@ -116,6 +133,7 @@ export const ingestStore = {
       requests: snapshot(store.requests),
       logs: snapshot(store.logs),
       events: snapshot(store.events),
+      metrics: snapshot(store.metrics),
       raw: snapshot(store.raw),
       cap: CAP,
     };
@@ -125,6 +143,7 @@ export const ingestStore = {
       requests: store.requests.data.length,
       logs: store.logs.data.length,
       events: store.events.data.length,
+      metrics: store.metrics.data.length,
       raw: store.raw.data.length,
       cap: CAP,
     };
@@ -132,7 +151,7 @@ export const ingestStore = {
   clear() {
     // Clear all ring buffers
     const totalRemoved = store.requests.data.length + store.logs.data.length + 
-                        store.events.data.length + store.raw.data.length;
+                        store.events.data.length + store.metrics.data.length + store.raw.data.length;
     
     store.requests.data.length = 0;
     store.requests.idx = 0;
@@ -140,6 +159,8 @@ export const ingestStore = {
     store.logs.idx = 0;
     store.events.data.length = 0;
     store.events.idx = 0;
+    store.metrics.data.length = 0;
+    store.metrics.idx = 0;
     store.raw.data.length = 0;
     store.raw.idx = 0;
     

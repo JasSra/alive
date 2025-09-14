@@ -99,7 +99,7 @@ export async function getMetrics(): Promise<ServerMetrics> {
 }
 
 // --- Unified ingest client helpers ---
-export async function getIngestRecent(params: { kind: "logs" | "requests" | "events"; limit?: number }) {
+export async function getIngestRecent(params: { kind: "logs" | "requests" | "events" | "metrics"; limit?: number }) {
   const url = new URL("/api/ingest/recent", window.location.origin);
   url.searchParams.set("kind", params.kind);
   if (params.limit) url.searchParams.set("limit", String(params.limit));

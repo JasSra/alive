@@ -39,6 +39,7 @@ export default function EventsPage() {
   const [range, setRange] = useState("5m");
   const [live, setLive] = useState(true);
   const [transport] = useState<"sse" | "ws">("sse");
+  const [compact, setCompact] = useState(true);
   const [filterService, setFilterService] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [ingestMetrics, setIngestMetrics] = useState<IngestMetrics | null>(null);
@@ -286,6 +287,15 @@ export default function EventsPage() {
               >
                 📈 Fetch Range
               </button>
+              <label className="ml-2 flex items-center gap-2 text-sm text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={compact}
+                  onChange={(e) => setCompact(e.target.checked)}
+                  className="accent-blue-500"
+                />
+                Compact
+              </label>
             </div>
 
             <div className="flex gap-4 items-center">
@@ -347,37 +357,37 @@ export default function EventsPage() {
             <table className="w-full">
               <thead className="bg-white/5">
                 <tr>
-                  <th className="text-left p-4 text-sm font-medium text-neutral-300">Time</th>
-                  <th className="text-left p-4 text-sm font-medium text-neutral-300">Event</th>
-                  <th className="text-left p-4 text-sm font-medium text-neutral-300">Status</th>
-                  <th className="text-left p-4 text-sm font-medium text-neutral-300">Response Time</th>
-                  <th className="text-left p-4 text-sm font-medium text-neutral-300">Service</th>
-                  <th className="text-left p-4 text-sm font-medium text-neutral-300">Correlation ID</th>
+                  <th className={`text-left ${compact ? 'p-2 text-xs' : 'p-4 text-sm'} font-medium text-neutral-300`}>Time</th>
+                  <th className={`text-left ${compact ? 'p-2 text-xs' : 'p-4 text-sm'} font-medium text-neutral-300`}>Event</th>
+                  <th className={`text-left ${compact ? 'p-2 text-xs' : 'p-4 text-sm'} font-medium text-neutral-300`}>Status</th>
+                  <th className={`text-left ${compact ? 'p-2 text-xs' : 'p-4 text-sm'} font-medium text-neutral-300`}>Response Time</th>
+                  <th className={`text-left ${compact ? 'p-2 text-xs' : 'p-4 text-sm'} font-medium text-neutral-300`}>Service</th>
+                  <th className={`text-left ${compact ? 'p-2 text-xs' : 'p-4 text-sm'} font-medium text-neutral-300`}>Correlation ID</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredEvents.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center p-8 text-neutral-400">
+                    <td colSpan={6} className={`text-center ${compact ? 'p-4' : 'p-8'} text-neutral-400`}>
                       No events available. {live ? "Waiting for events..." : "Try fetching a different time range."}
                     </td>
                   </tr>
                 ) : (
                   filteredEvents.map((event, index) => (
                     <tr key={event.id || index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                      <td className="p-4 text-sm text-neutral-300">
+                      <td className={`${compact ? 'p-2 text-xs' : 'p-4 text-sm'} text-neutral-300`}>
                         {new Date(event.timestamp).toLocaleTimeString()}
                       </td>
-                      <td className="p-4 text-sm text-white font-medium">
+                      <td className={`${compact ? 'p-2 text-xs' : 'p-4 text-sm'} text-white font-medium`}>
                         {event.name}
                       </td>
-                      <td className="p-4">
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getStatusBg(event.statusCode)}`}>
-                          <span className={`w-2 h-2 rounded-full mr-2 ${getStatusColor(event.statusCode)}`}></span>
+                      <td className={compact ? 'p-2' : 'p-4'}>
+                        <span className={`inline-flex items-center ${compact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-xs'} rounded-full font-medium border ${getStatusBg(event.statusCode)}`}>
+                          <span className={`rounded-full mr-1 ${compact ? 'w-1.5 h-1.5' : 'w-2 h-2'} ${getStatusColor(event.statusCode)}`}></span>
                           {event.statusCode || 'N/A'}
                         </span>
                       </td>
-                      <td className="p-4 text-sm text-neutral-300">
+                      <td className={`${compact ? 'p-2 text-xs' : 'p-4 text-sm'} text-neutral-300`}>
                         {event.responseTimeMs ? (
                           <span className={`${event.responseTimeMs > 1000 ? 'text-red-400' : event.responseTimeMs > 500 ? 'text-yellow-400' : 'text-green-400'}`}>
                             {event.responseTimeMs}ms
@@ -386,14 +396,14 @@ export default function EventsPage() {
                           <span className="text-neutral-600">-</span>
                         )}
                       </td>
-                      <td className="p-4 text-sm text-neutral-300">
-                        <span className="bg-blue-500/20 text-blue-400 px-2 py-1 rounded text-xs">
+                      <td className={`${compact ? 'p-2 text-xs' : 'p-4 text-sm'} text-neutral-300`}>
+                        <span className={`bg-blue-500/20 text-blue-400 ${compact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-xs'} rounded`}>
                           {event.service || 'unknown'}
                         </span>
                       </td>
-                      <td className="p-4 text-sm text-neutral-400 font-mono">
+                      <td className={`${compact ? 'p-2 text-[10px]' : 'p-4 text-sm'} text-neutral-400 font-mono`}>
                         {event.correlationId ? (
-                          <span className="bg-purple-500/20 text-purple-400 px-2 py-1 rounded text-xs">
+                          <span className={`bg-purple-500/20 text-purple-400 ${compact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-xs'} rounded`}>
                             {event.correlationId.slice(0, 8)}...
                           </span>
                         ) : (

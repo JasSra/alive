@@ -1,6 +1,16 @@
 version: '3.8'
 
 services:
+  otel-collector:
+    image: otel/opentelemetry-collector:0.104.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317" # gRPC
+      - "4318:4318" # HTTP/protobuf
+    restart: unless-stopped
+
   alive:
     build:
       context: .
